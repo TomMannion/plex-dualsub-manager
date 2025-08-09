@@ -1,0 +1,97 @@
+@import "tailwindcss";
+
+/* TailwindCSS v4 Custom Theme Configuration */
+@theme {
+  --color-plex-orange: #e5a00d;
+  --color-plex-orange-dark: #cc9000;
+  --color-plex-black: #000000;
+  --color-plex-gray-900: #1a1a1a;
+  --color-plex-gray-800: #2d2d2d;
+  --color-plex-gray-700: #3d3d3d;
+  --color-plex-gray-600: #4d4d4d;
+  --color-plex-gray-500: #6d6d6d;
+  --color-plex-gray-400: #8d8d8d;
+  --color-plex-gray-300: #aaaaaa;
+  --color-plex-gray-200: #cccccc;
+  --color-plex-gray-100: #e5e5e5;
+  
+  --font-family-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+@layer base {
+  body {
+    @apply bg-plex-gray-900 text-plex-gray-100 font-sans;
+  }
+  
+  html {
+    @apply scroll-smooth;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-plex-orange hover:bg-plex-orange-dark text-black font-semibold px-6 py-3 rounded-lg transition-colors duration-200;
+  }
+  
+  .btn-secondary {
+    @apply bg-plex-gray-700 hover:bg-plex-gray-600 text-plex-gray-100 font-medium px-6 py-3 rounded-lg transition-colors duration-200;
+  }
+  
+  .card {
+    @apply bg-plex-gray-800 border border-plex-gray-700 rounded-xl p-8 shadow-lg;
+  }
+  
+  .input-field {
+    @apply bg-plex-gray-800 border border-plex-gray-600 text-plex-gray-100 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-plex-orange focus:border-transparent;
+  }
+  
+  .status-connected {
+    @apply bg-green-500;
+  }
+  
+  .status-disconnected {
+    @apply bg-red-500;
+  }
+  
+  .status-loading {
+    @apply bg-yellow-500 animate-pulse;
+  }
+}
+
+/* Scrollbar styles */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #2d2d2d;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #4d4d4d;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #6d6d6d;
+}
+
+/* Custom slider styles */
+.slider::-webkit-slider-thumb {
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #e5a00d;
+  cursor: pointer;
+}
+
+.slider::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #e5a00d;
+  cursor: pointer;
+  border: none;
+}

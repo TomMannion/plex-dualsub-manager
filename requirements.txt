@@ -1,0 +1,14 @@
+plexapi==4.15.7
+fastapi==0.109.0
+uvicorn==0.27.0
+python-multipart==0.0.6
+pydantic==2.9.0
+pydantic-settings==2.0.3
+pysubs2==1.6.1
+chardet==5.2.0
+ffmpeg-python==0.2.0
+ffsubsync==0.4.29
+watchdog==3.0.0
+aiosqlite==0.19.0
+python-dotenv==1.0.0
+langdetect==1.0.9
