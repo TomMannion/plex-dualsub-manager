@@ -15,10 +15,10 @@ export const Dashboard: React.FC = () => {
     queryFn: apiClient.getLibraries,
   });
 
-  // Get total count for stats
+  // Get total count for stats with episode counts
   const { data: showsData } = useQuery({
     queryKey: ['shows-total'],
-    queryFn: () => apiClient.getShows(),
+    queryFn: () => apiClient.getShows(undefined, undefined, false), // Use slow mode to get episode counts
   });
 
   // Get recent shows for preview (limit to 4 for clean grid)
