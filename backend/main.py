@@ -6,16 +6,22 @@ from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 import os
 import sys
 from pathlib import Path
+from functools import lru_cache
+import time
 
 # Add backend to path
 sys.path.append(str(Path(__file__).parent))
 
 from services.plex_service import plex_service
 from services.subtitle_service import subtitle_service, DualSubtitleConfig, SubtitlePosition
+
+# Simple in-memory cache for show counts
+show_counts_cache: Dict[str, Dict[str, Any]] = {}
+CACHE_TTL = 300  # 5 minutes TTL for cache
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -102,29 +108,95 @@ async def get_libraries():
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/shows")
-async def get_shows(library: Optional[str] = None, limit: Optional[int] = None):
-    """Get all TV shows from a library"""
+async def get_shows(
+    library: Optional[str] = None, 
+    limit: Optional[int] = None,
+    fast_mode: bool = True,  # New parameter for fast loading
+    offset: int = 0  # For pagination
+):
+    """Get all TV shows from a library
+    
+    Args:
+        library: Optional library name
+        limit: Optional limit on number of shows
+        fast_mode: If True, skip expensive operations like episode/season counts
+        offset: Pagination offset
+    """
     try:
         shows = plex_service.get_all_shows(library)
         
-        # Apply limit if specified
+        # Apply pagination
+        total_count = len(shows)
+        if offset:
+            shows = shows[offset:]
         if limit:
             shows = shows[:limit]
         
-        return {
-            "count": len(shows),
-            "shows": [
-                {
-                    "id": show.ratingKey,
-                    "title": show.title,
-                    "year": show.year,
-                    "thumb": plex_service.get_full_image_url(show.thumb),
-                    "episode_count": len(show.episodes()),
-                    "season_count": len(show.seasons())
-                }
-                for show in shows
-            ]
+        if fast_mode:
+            # Fast mode: Return basic info only, no episode/season counts
+            return {
+                "count": total_count,
+                "offset": offset,
+                "shows": [
+                    {
+                        "id": show.ratingKey,
+                        "title": show.title,
+                        "year": show.year,
+                        "thumb": plex_service.get_full_image_url(show.thumb),
+                        "episode_count": 0,  # Placeholder, will be loaded separately
+                        "season_count": 0,   # Placeholder, will be loaded separately
+                        "summary": getattr(show, 'summary', '')[:200] if hasattr(show, 'summary') else ''
+                    }
+                    for show in shows
+                ]
+            }
+        else:
+            # Full mode: Include episode and season counts (slower)
+            return {
+                "count": total_count,
+                "offset": offset,
+                "shows": [
+                    {
+                        "id": show.ratingKey,
+                        "title": show.title,
+                        "year": show.year,
+                        "thumb": plex_service.get_full_image_url(show.thumb),
+                        "episode_count": len(show.episodes()),
+                        "season_count": len(show.seasons())
+                    }
+                    for show in shows
+                ]
+            }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/shows/{show_id}/counts")
+async def get_show_counts(show_id: str):
+    """Get episode and season counts for a specific show (with caching)"""
+    try:
+        # Check cache first
+        cache_key = f"counts_{show_id}"
+        if cache_key in show_counts_cache:
+            cached_data = show_counts_cache[cache_key]
+            # Check if cache is still valid
+            if time.time() - cached_data['timestamp'] < CACHE_TTL:
+                return cached_data['data']
+        
+        # Fetch from Plex if not in cache or expired
+        show = plex_service.get_show(show_id)
+        result = {
+            "id": show.ratingKey,
+            "episode_count": len(show.episodes()),
+            "season_count": len(show.seasons())
         }
+        
+        # Store in cache
+        show_counts_cache[cache_key] = {
+            'data': result,
+            'timestamp': time.time()
+        }
+        
+        return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

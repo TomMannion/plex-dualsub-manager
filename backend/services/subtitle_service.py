@@ -692,35 +692,89 @@ class SubtitleService:
         secondary_path: str,
         output_path: str,
         config: DualSubtitleConfig,
-        enable_sync: bool = True
+        enable_sync: bool = True,
+        video_path: Optional[str] = None
     ) -> Dict:
         """Create a dual subtitle in ASS format with full customization and optional synchronization"""
         
-        sync_report = {'attempted': False, 'successful': False}
+        sync_report = {'attempted': False, 'successful': False, 'primary_synced': False, 'secondary_synced': False}
+        actual_primary_path = primary_path
         actual_secondary_path = secondary_path
         
-        # Attempt synchronization if enabled
-        if enable_sync:
+        # Attempt synchronization if enabled and video is available
+        if enable_sync and video_path and Path(video_path).exists():
             try:
                 sync_report['attempted'] = True
                 
-                # Create temporary file for synchronized secondary subtitle
+                # Sync PRIMARY subtitle to video first
+                with tempfile.NamedTemporaryFile(suffix='.srt', delete=False) as tmp_file:
+                    temp_primary_sync_path = tmp_file.name
+                
+                primary_sync_result = SubtitleService.sync_subtitles_with_ffsubsync(
+                    video_path, primary_path, temp_primary_sync_path
+                )
+                
+                if primary_sync_result['success']:
+                    actual_primary_path = temp_primary_sync_path
+                    sync_report['primary_synced'] = True
+                    print(f"Primary subtitle synced to video")
+                else:
+                    print(f"Primary sync failed: {primary_sync_result['error']}")
+                    # Clean up temp file if sync failed
+                    try:
+                        Path(temp_primary_sync_path).unlink()
+                    except:
+                        pass
+                
+                # Sync SECONDARY subtitle to video
+                with tempfile.NamedTemporaryFile(suffix='.srt', delete=False) as tmp_file:
+                    temp_secondary_sync_path = tmp_file.name
+                
+                secondary_sync_result = SubtitleService.sync_subtitles_with_ffsubsync(
+                    video_path, secondary_path, temp_secondary_sync_path
+                )
+                
+                if secondary_sync_result['success']:
+                    actual_secondary_path = temp_secondary_sync_path
+                    sync_report['secondary_synced'] = True
+                    print(f"Secondary subtitle synced to video")
+                else:
+                    print(f"Secondary sync failed: {secondary_sync_result['error']}")
+                    # Clean up temp file if sync failed
+                    try:
+                        Path(temp_secondary_sync_path).unlink()
+                    except:
+                        pass
+                
+                sync_report['successful'] = sync_report['primary_synced'] or sync_report['secondary_synced']
+                sync_report['method'] = 'ffsubsync-to-video'
+                    
+            except Exception as e:
+                sync_report['error'] = str(e)
+                print(f"Video synchronization attempt failed: {e}")
+        
+        elif enable_sync and not video_path:
+            # Fallback: Try to sync secondary to primary if no video available
+            try:
+                sync_report['attempted'] = True
+                
                 with tempfile.NamedTemporaryFile(suffix='.srt', delete=False) as tmp_file:
                     temp_sync_path = tmp_file.name
                 
-                # Try to synchronize secondary subtitle to primary
+                # This is less reliable but better than nothing
                 sync_result = SubtitleService.sync_subtitles_with_ffsubsync(
                     primary_path, secondary_path, temp_sync_path
                 )
                 
                 if sync_result['success']:
                     actual_secondary_path = temp_sync_path
+                    sync_report['secondary_synced'] = True
                     sync_report['successful'] = True
-                    sync_report['method'] = 'ffsubsync'
-                    print(f"Using synchronized secondary subtitle")
+                    sync_report['method'] = 'ffsubsync-subtitle-to-subtitle'
+                    print(f"Secondary subtitle synced to primary (fallback method)")
                 else:
                     sync_report['error'] = sync_result['error']
-                    print(f"Synchronization failed, using original timing: {sync_result['error']}")
+                    print(f"Subtitle-to-subtitle sync failed: {sync_result['error']}")
                     # Clean up temp file if sync failed
                     try:
                         Path(temp_sync_path).unlink()
@@ -729,11 +783,11 @@ class SubtitleService:
                     
             except Exception as e:
                 sync_report['error'] = str(e)
-                print(f"Synchronization attempt failed: {e}")
+                print(f"Subtitle-to-subtitle synchronization failed: {e}")
         
         try:
-            # Load both subtitle files
-            primary_subs = SubtitleService.load_subtitle(primary_path)
+            # Load both subtitle files (use synced versions if available)
+            primary_subs = SubtitleService.load_subtitle(actual_primary_path)
             secondary_subs = SubtitleService.load_subtitle(actual_secondary_path)
             
             # Create new ASS file
@@ -769,8 +823,13 @@ class SubtitleService:
             # Save the file
             dual_subs.save(output_path)
             
-            # Clean up temporary synchronized file
-            if sync_report['successful'] and actual_secondary_path != secondary_path:
+            # Clean up temporary synchronized files
+            if sync_report.get('primary_synced') and actual_primary_path != primary_path:
+                try:
+                    Path(actual_primary_path).unlink()
+                except:
+                    pass
+            if sync_report.get('secondary_synced') and actual_secondary_path != secondary_path:
                 try:
                     Path(actual_secondary_path).unlink()
                 except:
@@ -787,8 +846,13 @@ class SubtitleService:
             }
             
         except Exception as e:
-            # Clean up temporary file on error
-            if sync_report['successful'] and actual_secondary_path != secondary_path:
+            # Clean up temporary files on error
+            if sync_report.get('primary_synced') and actual_primary_path != primary_path:
+                try:
+                    Path(actual_primary_path).unlink()
+                except:
+                    pass
+            if sync_report.get('secondary_synced') and actual_secondary_path != secondary_path:
                 try:
                     Path(actual_secondary_path).unlink()
                 except:
@@ -801,35 +865,89 @@ class SubtitleService:
         secondary_path: str,
         output_path: str,
         config: DualSubtitleConfig,
-        enable_sync: bool = True
+        enable_sync: bool = True,
+        video_path: Optional[str] = None
     ) -> Dict:
         """Create a dual subtitle in SRT format with prefixes and optional synchronization"""
         
-        sync_report = {'attempted': False, 'successful': False}
+        sync_report = {'attempted': False, 'successful': False, 'primary_synced': False, 'secondary_synced': False}
+        actual_primary_path = primary_path
         actual_secondary_path = secondary_path
         
-        # Attempt synchronization if enabled
-        if enable_sync:
+        # Attempt synchronization if enabled and video is available
+        if enable_sync and video_path and Path(video_path).exists():
             try:
                 sync_report['attempted'] = True
                 
-                # Create temporary file for synchronized secondary subtitle
+                # Sync PRIMARY subtitle to video first
+                with tempfile.NamedTemporaryFile(suffix='.srt', delete=False) as tmp_file:
+                    temp_primary_sync_path = tmp_file.name
+                
+                primary_sync_result = SubtitleService.sync_subtitles_with_ffsubsync(
+                    video_path, primary_path, temp_primary_sync_path
+                )
+                
+                if primary_sync_result['success']:
+                    actual_primary_path = temp_primary_sync_path
+                    sync_report['primary_synced'] = True
+                    print(f"Primary subtitle synced to video")
+                else:
+                    print(f"Primary sync failed: {primary_sync_result['error']}")
+                    # Clean up temp file if sync failed
+                    try:
+                        Path(temp_primary_sync_path).unlink()
+                    except:
+                        pass
+                
+                # Sync SECONDARY subtitle to video
+                with tempfile.NamedTemporaryFile(suffix='.srt', delete=False) as tmp_file:
+                    temp_secondary_sync_path = tmp_file.name
+                
+                secondary_sync_result = SubtitleService.sync_subtitles_with_ffsubsync(
+                    video_path, secondary_path, temp_secondary_sync_path
+                )
+                
+                if secondary_sync_result['success']:
+                    actual_secondary_path = temp_secondary_sync_path
+                    sync_report['secondary_synced'] = True
+                    print(f"Secondary subtitle synced to video")
+                else:
+                    print(f"Secondary sync failed: {secondary_sync_result['error']}")
+                    # Clean up temp file if sync failed
+                    try:
+                        Path(temp_secondary_sync_path).unlink()
+                    except:
+                        pass
+                
+                sync_report['successful'] = sync_report['primary_synced'] or sync_report['secondary_synced']
+                sync_report['method'] = 'ffsubsync-to-video'
+                    
+            except Exception as e:
+                sync_report['error'] = str(e)
+                print(f"Video synchronization attempt failed: {e}")
+        
+        elif enable_sync and not video_path:
+            # Fallback: Try to sync secondary to primary if no video available
+            try:
+                sync_report['attempted'] = True
+                
                 with tempfile.NamedTemporaryFile(suffix='.srt', delete=False) as tmp_file:
                     temp_sync_path = tmp_file.name
                 
-                # Try to synchronize secondary subtitle to primary
+                # This is less reliable but better than nothing
                 sync_result = SubtitleService.sync_subtitles_with_ffsubsync(
                     primary_path, secondary_path, temp_sync_path
                 )
                 
                 if sync_result['success']:
                     actual_secondary_path = temp_sync_path
+                    sync_report['secondary_synced'] = True
                     sync_report['successful'] = True
-                    sync_report['method'] = 'ffsubsync'
-                    print(f"Using synchronized secondary subtitle")
+                    sync_report['method'] = 'ffsubsync-subtitle-to-subtitle'
+                    print(f"Secondary subtitle synced to primary (fallback method)")
                 else:
                     sync_report['error'] = sync_result['error']
-                    print(f"Synchronization failed, using original timing: {sync_result['error']}")
+                    print(f"Subtitle-to-subtitle sync failed: {sync_result['error']}")
                     # Clean up temp file if sync failed
                     try:
                         Path(temp_sync_path).unlink()
@@ -838,11 +956,11 @@ class SubtitleService:
                         
             except Exception as e:
                 sync_report['error'] = str(e)
-                print(f"Synchronization attempt failed: {e}")
+                print(f"Subtitle-to-subtitle synchronization failed: {e}")
         
         try:
-            # Load both subtitle files
-            primary_subs = SubtitleService.load_subtitle(primary_path)
+            # Load both subtitle files (use synced versions if available)
+            primary_subs = SubtitleService.load_subtitle(actual_primary_path)
             secondary_subs = SubtitleService.load_subtitle(actual_secondary_path)
             
             # Create new SRT file
@@ -891,8 +1009,13 @@ class SubtitleService:
             # Save as SRT
             dual_subs.save(output_path, format_='srt')
             
-            # Clean up temporary synchronized file
-            if sync_report['successful'] and actual_secondary_path != secondary_path:
+            # Clean up temporary synchronized files
+            if sync_report.get('primary_synced') and actual_primary_path != primary_path:
+                try:
+                    Path(actual_primary_path).unlink()
+                except:
+                    pass
+            if sync_report.get('secondary_synced') and actual_secondary_path != secondary_path:
                 try:
                     Path(actual_secondary_path).unlink()
                 except:
@@ -909,8 +1032,13 @@ class SubtitleService:
             }
             
         except Exception as e:
-            # Clean up temporary file on error
-            if sync_report['successful'] and actual_secondary_path != secondary_path:
+            # Clean up temporary files on error
+            if sync_report.get('primary_synced') and actual_primary_path != primary_path:
+                try:
+                    Path(actual_primary_path).unlink()
+                except:
+                    pass
+            if sync_report.get('secondary_synced') and actual_secondary_path != secondary_path:
                 try:
                     Path(actual_secondary_path).unlink()
                 except:
@@ -968,11 +1096,13 @@ class SubtitleService:
         try:
             if config.output_format == SubtitleFormat.SRT:
                 result = SubtitleService.create_dual_subtitle_srt(
-                    primary_path, secondary_path, output_path, config, enable_sync=enable_sync
+                    primary_path, secondary_path, output_path, config, 
+                    enable_sync=enable_sync, video_path=video_path
                 )
             else:
                 result = SubtitleService.create_dual_subtitle_ass(
-                    primary_path, secondary_path, output_path, config, enable_sync=enable_sync
+                    primary_path, secondary_path, output_path, config, 
+                    enable_sync=enable_sync, video_path=video_path
                 )
             
             # Add additional information to result

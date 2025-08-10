@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueries } from '@tanstack/react-query';
 import { Search, Film, Calendar, Play, Subtitles } from 'lucide-react';
 import { apiClient } from '../lib/api';
 import type { Show } from '../types';
@@ -15,16 +15,44 @@ export const Shows: React.FC = () => {
     queryFn: apiClient.getLibraries,
   });
 
-  // Fetch shows
+  // Fetch shows in fast mode (no counts)
   const { data: showsData, isLoading } = useQuery({
     queryKey: ['shows', selectedLibrary],
-    queryFn: () => apiClient.getShows(selectedLibrary || undefined),
+    queryFn: () => apiClient.getShows(selectedLibrary || undefined, undefined, true),
+    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
   });
 
   // Filter shows based on search term
   const filteredShows = showsData?.shows.filter((show: Show) =>
     show.title.toLowerCase().includes(searchTerm.toLowerCase())
   ) || [];
+
+  // Use React Query for fetching counts with proper caching
+  const countQueries = useQueries({
+    queries: filteredShows.map(show => ({
+      queryKey: ['show-counts', show.id],
+      queryFn: () => apiClient.getShowCounts(show.id),
+      staleTime: 10 * 60 * 1000, // Cache for 10 minutes
+      cacheTime: 30 * 60 * 1000, // Keep in cache for 30 minutes
+      retry: 1, // Only retry once on failure
+    }))
+  });
+
+  // Build a map of counts from query results
+  const showCounts = new Map<string, { episode_count: number; season_count: number }>();
+  countQueries.forEach((query, index) => {
+    if (query.data && filteredShows[index]) {
+      showCounts.set(filteredShows[index].id, query.data);
+    }
+  });
+
+  // Calculate stats with actual counts when available
+  const totalEpisodes = filteredShows.reduce((acc, show) => {
+    const counts = showCounts.get(show.id);
+    return acc + (counts?.episode_count || 0);
+  }, 0);
+
+  const isLoadingCounts = countQueries.some(q => q.isLoading);
 
   return (
     <div className="space-y-8">
@@ -85,7 +113,7 @@ export const Shows: React.FC = () => {
         </div>
         <div className="card text-center p-4">
           <div className="text-2xl font-bold text-purple-400">
-            {filteredShows.reduce((acc, show) => acc + show.episode_count, 0)}
+            {isLoadingCounts ? '...' : totalEpisodes}
           </div>
           <div className="text-sm text-plex-gray-400">Episodes</div>
         </div>
@@ -105,7 +133,11 @@ export const Shows: React.FC = () => {
       ) : filteredShows.length > 0 ? (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-8">
           {filteredShows.map((show) => (
-            <ShowCard key={show.id} show={show} />
+            <ShowCard 
+              key={show.id} 
+              show={show} 
+              counts={showCounts.get(show.id)}
+            />
           ))}
         </div>
       ) : (
@@ -121,7 +153,13 @@ export const Shows: React.FC = () => {
   );
 };
 
-const ShowCard: React.FC<{ show: Show }> = ({ show }) => {
+const ShowCard: React.FC<{ 
+  show: Show; 
+  counts?: { episode_count: number; season_count: number } 
+}> = ({ show, counts }) => {
+  const [imageLoaded, setImageLoaded] = useState(false);
+  const [imageError, setImageError] = useState(false);
+
   return (
     <Link
       to={`/shows/${show.id}`}
@@ -130,13 +168,26 @@ const ShowCard: React.FC<{ show: Show }> = ({ show }) => {
       <div className="card hover:border-plex-orange/50 transition-all duration-200 p-4 h-full">
         {/* Poster */}
         <div className="aspect-[2/3] bg-plex-gray-700 rounded-lg mb-3 overflow-hidden relative group-hover:scale-105 transition-transform duration-200">
-          {show.thumb ? (
-            <img
-              src={show.thumb}
-              alt={show.title}
-              className="w-full h-full object-cover"
-              loading="lazy"
-            />
+          {show.thumb && !imageError ? (
+            <>
+              {/* Placeholder while loading */}
+              {!imageLoaded && (
+                <div className="absolute inset-0 bg-plex-gray-700 animate-pulse flex items-center justify-center">
+                  <Film className="w-12 h-12 text-plex-gray-500" />
+                </div>
+              )}
+              {/* Actual image with lazy loading */}
+              <img
+                src={show.thumb}
+                alt={show.title}
+                className={`w-full h-full object-cover transition-opacity duration-300 ${
+                  imageLoaded ? 'opacity-100' : 'opacity-0'
+                }`}
+                loading="lazy"
+                onLoad={() => setImageLoaded(true)}
+                onError={() => setImageError(true)}
+              />
+            </>
           ) : (
             <div className="w-full h-full flex items-center justify-center">
               <Film className="w-12 h-12 text-plex-gray-500" />
@@ -163,11 +214,21 @@ const ShowCard: React.FC<{ show: Show }> = ({ show }) => {
           <div className="flex items-center justify-between text-xs text-plex-gray-400">
             <div className="flex items-center gap-1">
               <Play className="w-3 h-3" />
-              <span>{show.episode_count} eps</span>
+              <span>
+                {counts?.episode_count !== undefined 
+                  ? `${counts.episode_count} eps` 
+                  : '...'
+                }
+              </span>
             </div>
             <div className="flex items-center gap-1">
               <Subtitles className="w-3 h-3" />
-              <span>{show.season_count} seasons</span>
+              <span>
+                {counts?.season_count !== undefined 
+                  ? `${counts.season_count} seasons` 
+                  : '...'
+                }
+              </span>
             </div>
           </div>
         </div>

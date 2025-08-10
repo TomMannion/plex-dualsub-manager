@@ -13,7 +13,7 @@ import type {
   ExtractResult,
 } from '../types';
 
-const API_BASE = '';
+const API_BASE = 'http://localhost:8000';
 
 // Create axios instance
 const api = axios.create({
@@ -36,12 +36,18 @@ export const apiClient = {
   },
 
   // Shows
-  async getShows(library?: string, limit?: number): Promise<{ count: number; shows: Show[] }> {
+  async getShows(library?: string, limit?: number, fastMode: boolean = true): Promise<{ count: number; shows: Show[] }> {
     const params = new URLSearchParams();
     if (library) params.append('library', library);
     if (limit) params.append('limit', limit.toString());
+    params.append('fast_mode', fastMode.toString());
     
     const response = await api.get(`/api/shows?${params.toString()}`);
+    return response.data;
+  },
+
+  async getShowCounts(showId: string): Promise<{ id: string; episode_count: number; season_count: number }> {
+    const response = await api.get(`/api/shows/${showId}/counts`);
     return response.data;
   },
 

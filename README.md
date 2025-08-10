@@ -39,57 +39,76 @@ A powerful web application for creating and managing dual-language subtitles for
 - **Python 3.8+**
 - **Node.js 16+** 
 - **Plex Media Server** with accessible media libraries
-- **ffmpeg** (optional, for subtitle synchronization)
+- **ffmpeg** (recommended, for subtitle synchronization)
 
 ### Installation
 
 1. **Clone the repository**
    ```bash
-   git clone <repository-url>
+   git clone https://github.com/yourusername/PlexDualSub.git
    cd PlexDualSub
    ```
 
-2. **Run the setup script**
+2. **Set up the environment**
    ```bash
-   ./setup.sh
-   ```
-
-3. **Start the application**
-   ```bash
-   ./run.sh
-   ```
-
-4. **Open your browser**
-   ```
-   http://localhost:5173
-   ```
-
-### Manual Installation
-
-If you prefer manual setup:
-
-1. **Backend Setup**
-   ```bash
+   # Install Python dependencies
    python3 -m venv venv
-   source venv/bin/activate
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
    pip install -r requirements.txt
-   ```
-
-2. **Frontend Setup**
-   ```bash
+   
+   # Install Node.js dependencies  
    cd frontend
    npm install
    cd ..
    ```
 
-3. **Start Backend**
+3. **Configure Plex connection**
+   ```bash
+   cp .env.example .env
+   # Edit .env with your Plex server details
+   ```
+
+4. **Start the application**
+   ```bash
+   python run.py
+   ```
+
+5. **Open your browser**
+   ```
+   http://localhost:5173
+   ```
+
+### Configuration
+
+After installation, configure your Plex connection by editing the `.env` file:
+
+```bash
+# Your Plex server URL (local or remote)
+PLEX_URL=http://localhost:32400
+
+# Your Plex authentication token
+# Get this from: https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/
+PLEX_TOKEN=your_plex_token_here
+
+# Your Plex server name (optional)
+PLEX_SERVER_NAME=My Plex Server
+
+# The name of your TV shows library in Plex
+PLEX_TV_LIBRARY=TV Shows
+```
+
+### Alternative: Manual Start
+
+To start services individually:
+
+1. **Backend** (Terminal 1)
    ```bash
    source venv/bin/activate
    cd backend
    python main.py
    ```
 
-4. **Start Frontend** (in another terminal)
+2. **Frontend** (Terminal 2)
    ```bash
    cd frontend
    npm run dev
@@ -175,14 +194,25 @@ pip install opencc-python-reimplemented
 
 ```
 PlexDualSub/
-├── backend/           # FastAPI backend
-│   ├── services/      # Business logic
-│   └── main.py       # API server
-├── frontend/          # React frontend
-│   └── src/          # React components
-├── requirements.txt   # Python dependencies
-├── run.sh            # Start script
-└── setup.sh          # Installation script
+├── backend/                    # FastAPI backend
+│   ├── services/              # Business logic services
+│   │   ├── plex_service.py   # Plex API integration
+│   │   ├── subtitle_service.py # Subtitle processing
+│   │   └── ...               # Other services
+│   ├── main.py               # API server (current)
+│   ├── main_refactored.py    # Enhanced API server
+│   └── config.py             # Configuration management
+├── frontend/                  # React frontend
+│   ├── src/                  # React components
+│   │   ├── pages/           # Main application pages
+│   │   ├── components/      # Reusable components
+│   │   └── lib/            # API client and utilities
+│   └── package.json         # Node.js dependencies
+├── requirements.txt          # Python dependencies
+├── run.py                   # Main launcher script
+├── cleanup.py               # Port cleanup utility
+├── .env.example             # Environment template
+└── .gitignore              # Git ignore rules
 ```
 
 ## 🐛 Troubleshooting
@@ -203,7 +233,8 @@ PlexDualSub/
 
 **Frontend Not Loading**
 - Check if both servers are running
-- Verify ports 3000/5173 (frontend) and 8000 (backend) are available
+- Verify ports 5173 (frontend) and 8000 (backend) are available
+- Use `python cleanup.py` to free up conflicting ports
 
 ## 📝 License
 

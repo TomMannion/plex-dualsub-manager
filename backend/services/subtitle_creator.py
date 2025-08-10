@@ -140,7 +140,7 @@ class DualSubtitleCreator:
             
             # Step 2: Load and potentially synchronize subtitles
             primary_subs, secondary_subs, sync_info = self._load_and_sync_subtitles(
-                primary_path, secondary_path, config
+                primary_path, secondary_path, config, video_path
             )
             
             # Step 3: Validate with video if provided
