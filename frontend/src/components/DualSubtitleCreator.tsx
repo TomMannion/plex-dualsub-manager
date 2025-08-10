@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useMutation } from '@tanstack/react-query';
-import { Palette, Maximize2, Eye, Loader, Check, AlertCircle } from 'lucide-react';
+import { Palette, Maximize2, Eye, Loader, Check, AlertCircle, X } from 'lucide-react';
 import { apiClient } from '../lib/api';
 import type { ExternalSubtitle, DualSubtitleConfig } from '../types';
 
@@ -52,6 +53,29 @@ export const DualSubtitleCreator: React.FC<DualSubtitleCreatorProps> = ({
       setShowPreview(true);
     },
   });
+
+  // Modal behavior: body scroll lock and escape key
+  useEffect(() => {
+    if (showPreview) {
+      // Lock body scroll
+      document.body.style.overflow = 'hidden';
+      
+      // Handle escape key
+      const handleEscape = (e: KeyboardEvent) => {
+        if (e.key === 'Escape') {
+          setShowPreview(false);
+        }
+      };
+      
+      document.addEventListener('keydown', handleEscape);
+      
+      return () => {
+        // Cleanup
+        document.body.style.overflow = '';
+        document.removeEventListener('keydown', handleEscape);
+      };
+    }
+  }, [showPreview]);
 
   const handlePreview = () => {
     if (!config.primary_subtitle || !config.secondary_subtitle) {
@@ -125,16 +149,16 @@ export const DualSubtitleCreator: React.FC<DualSubtitleCreatorProps> = ({
             <div 
               className={`cursor-pointer rounded-lg border-2 p-4 transition-all ${
                 config.output_format === 'ass' 
-                  ? 'border-plex-orange bg-plex-orange/10' 
-                  : 'border-plex-gray-600 hover:border-plex-gray-500'
+                  ? 'border-gold-500 bg-gold-500/10' 
+                  : 'border-sage-500/30 hover:border-sage-500/50'
               }`}
               onClick={() => setConfig({ ...config, output_format: 'ass' })}
             >
               <div className="flex items-center gap-3 mb-2">
                 <div className={`w-4 h-4 rounded-full border-2 ${
-                  config.output_format === 'ass' ? 'border-plex-orange bg-plex-orange' : 'border-plex-gray-500'
+                  config.output_format === 'ass' ? 'border-gold-500 bg-gold-500' : 'border-mist-500'
                 }`} />
-                <h5 className="font-semibold text-plex-gray-100">ASS Format (.ass) <span className="text-plex-orange text-xs">RECOMMENDED</span></h5>
+                <h5 className="font-semibold text-cream-500">ASS Format (.ass) <span className="text-gold-500 text-xs">RECOMMENDED</span></h5>
               </div>
               <p className="text-sm text-plex-gray-400">
                 Advanced styling with automatic language detection, CJK font optimization, and perfect positioning. Best visual experience.
@@ -144,16 +168,16 @@ export const DualSubtitleCreator: React.FC<DualSubtitleCreatorProps> = ({
             <div 
               className={`cursor-pointer rounded-lg border-2 p-4 transition-all ${
                 config.output_format === 'srt' 
-                  ? 'border-plex-orange bg-plex-orange/10' 
-                  : 'border-plex-gray-600 hover:border-plex-gray-500'
+                  ? 'border-gold-500 bg-gold-500/10' 
+                  : 'border-sage-500/30 hover:border-sage-500/50'
               }`}
               onClick={() => setConfig({ ...config, output_format: 'srt' })}
             >
               <div className="flex items-center gap-3 mb-2">
                 <div className={`w-4 h-4 rounded-full border-2 ${
-                  config.output_format === 'srt' ? 'border-plex-orange bg-plex-orange' : 'border-plex-gray-500'
+                  config.output_format === 'srt' ? 'border-gold-500 bg-gold-500' : 'border-mist-500'
                 }`} />
-                <h5 className="font-semibold text-plex-gray-100">SRT Format (.srt)</h5>
+                <h5 className="font-semibold text-cream-500">SRT Format (.srt)</h5>
               </div>
               <p className="text-sm text-plex-gray-400">
                 Simple format with language prefixes (e.g., [EN], [JA]). Maximum compatibility with all players.
@@ -495,82 +519,117 @@ export const DualSubtitleCreator: React.FC<DualSubtitleCreatorProps> = ({
         </div>
       )}
 
-      {/* Preview Modal */}
-      {showPreview && previewData && (
+      {/* Production Modal - Using Portal for Perfect Positioning */}
+      {showPreview && previewData && createPortal(
         <div 
-          className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4"
+          className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
+          style={{ 
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.8)',
+            backdropFilter: 'blur(4px)'
+          }}
           onClick={() => setShowPreview(false)}
         >
+          {/* Modal Content */}
           <div 
-            className="bg-plex-gray-800 rounded-lg max-w-4xl max-h-[80vh] w-full overflow-hidden"
+            className="bg-charcoal-500 rounded-2xl border border-sage-500/30 shadow-2xl w-full overflow-hidden"
+            style={{
+              maxWidth: '72rem',
+              maxHeight: '85vh',
+              position: 'relative'
+            }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="p-6 border-b border-plex-gray-700 flex items-center justify-between">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-6 border-b border-sage-500/20">
               <div>
-                <h3 className="text-xl font-bold text-plex-gray-100">Subtitle Preview</h3>
-                <p className="text-plex-gray-400 text-sm mt-1">
-                  Preview of the first few subtitle entries
+                <h3 className="text-2xl font-serif font-bold text-cream-500">Subtitle Preview</h3>
+                <p className="text-mist-500 text-sm mt-1">
+                  Preview of your dual subtitle styling
                 </p>
               </div>
               <button
                 onClick={() => setShowPreview(false)}
-                className="text-plex-gray-400 hover:text-plex-gray-200 transition-colors p-2"
-                title="Close preview"
+                className="text-mist-500 hover:text-cream-500 hover:bg-sage-500/20 transition-all duration-200 p-2 rounded-lg"
+                title="Close (Esc)"
               >
-                ✕
+                <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="p-6 overflow-auto max-h-96">
-              <div className="space-y-6">
-                {/* Primary Subtitles */}
-                <div>
-                  <h4 className="text-lg font-semibold text-plex-gray-100 mb-3 flex items-center gap-2">
+
+            {/* Modal Body - Scrollable */}
+            <div className="overflow-y-auto p-6" style={{ maxHeight: '70vh' }}>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Primary Subtitles Column */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3 mb-4">
                     <div 
-                      className="w-4 h-4 rounded" 
+                      className="w-4 h-4 rounded-full border-2 border-cream-500" 
                       style={{ backgroundColor: previewData.config?.primary_color || '#ffffff' }}
                     />
-                    Primary Subtitle ({previewData.config?.primary_position})
-                  </h4>
-                  <div className="space-y-2">
+                    <h4 className="text-lg font-semibold text-cream-500">
+                      Primary ({previewData.config?.primary_position})
+                    </h4>
+                  </div>
+                  <div className="space-y-3">
                     {previewData.primary?.map((line: any, index: number) => (
-                      <div key={index} className="bg-plex-gray-700 rounded p-3">
-                        <div className="text-xs text-plex-gray-400 mb-1">{line.time}</div>
-                        <div className="text-sm text-plex-gray-200">{line.text}</div>
+                      <div key={index} className="bg-slate-500/30 rounded-lg p-4 border border-sage-500/10">
+                        <div className="text-xs text-gold-500 font-mono mb-2">{line.time}</div>
+                        <div 
+                          className="text-sm leading-relaxed font-medium"
+                          style={{ color: previewData.config?.primary_color || '#ffffff' }}
+                        >
+                          {line.text}
+                        </div>
                       </div>
                     ))}
                   </div>
                 </div>
 
-                {/* Secondary Subtitles */}
-                <div>
-                  <h4 className="text-lg font-semibold text-plex-gray-100 mb-3 flex items-center gap-2">
+                {/* Secondary Subtitles Column */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3 mb-4">
                     <div 
-                      className="w-4 h-4 rounded" 
+                      className="w-4 h-4 rounded-full border-2 border-cream-500" 
                       style={{ backgroundColor: previewData.config?.secondary_color || '#ffff00' }}
                     />
-                    Secondary Subtitle ({previewData.config?.secondary_position})
-                  </h4>
-                  <div className="space-y-2">
+                    <h4 className="text-lg font-semibold text-cream-500">
+                      Secondary ({previewData.config?.secondary_position})
+                    </h4>
+                  </div>
+                  <div className="space-y-3">
                     {previewData.secondary?.map((line: any, index: number) => (
-                      <div key={index} className="bg-plex-gray-700 rounded p-3">
-                        <div className="text-xs text-plex-gray-400 mb-1">{line.time}</div>
-                        <div className="text-sm text-plex-gray-200">{line.text}</div>
+                      <div key={index} className="bg-slate-500/30 rounded-lg p-4 border border-sage-500/10">
+                        <div className="text-xs text-gold-500 font-mono mb-2">{line.time}</div>
+                        <div 
+                          className="text-sm leading-relaxed font-medium"
+                          style={{ color: previewData.config?.secondary_color || '#ffff00' }}
+                        >
+                          {line.text}
+                        </div>
                       </div>
                     ))}
                   </div>
                 </div>
               </div>
             </div>
-            <div className="p-6 border-t border-plex-gray-700 flex justify-end">
+
+            {/* Modal Footer */}
+            <div className="flex items-center justify-end gap-3 p-6 border-t border-sage-500/20 bg-charcoal-500/50">
               <button
                 onClick={() => setShowPreview(false)}
-                className="btn-secondary"
+                className="px-6 py-2 bg-sage-500/20 hover:bg-sage-500/30 text-cream-500 rounded-lg transition-colors duration-200"
               >
-                Close
+                Close Preview
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

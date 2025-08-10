@@ -1,13 +1,25 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery, useQueries } from '@tanstack/react-query';
-import { Search, Film, Calendar, Play, Subtitles } from 'lucide-react';
+import { Search, Film, Calendar, Play, Subtitles, Filter, Grid, List } from 'lucide-react';
 import { apiClient } from '../lib/api';
+import { fixPlexImageUrl } from '../utils/imageUtils';
+import { LanguageFilter } from '../components/LanguageFilter';
+import { LANGUAGES, filenameContainsLanguages } from '../utils/languages';
 import type { Show } from '../types';
+
+interface Language {
+  code: string;
+  name: string;
+  nativeName?: string;
+  commonCodes: string[];
+}
 
 export const Shows: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedLibrary, setSelectedLibrary] = useState<string>('');
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [selectedLanguages, setSelectedLanguages] = useState<Language[]>([]);
 
   // Fetch libraries for filtering
   const { data: libraries } = useQuery({
@@ -15,17 +27,25 @@ export const Shows: React.FC = () => {
     queryFn: apiClient.getLibraries,
   });
 
-  // Fetch shows in fast mode (no counts)
+  // Fetch shows - use language filtering if languages are selected
   const { data: showsData, isLoading } = useQuery({
-    queryKey: ['shows', selectedLibrary],
-    queryFn: () => apiClient.getShows(selectedLibrary || undefined, undefined, true),
+    queryKey: ['shows', selectedLibrary, selectedLanguages.map(l => l.code)],
+    queryFn: () => {
+      const languageCodes = selectedLanguages.map(l => l.code);
+      if (languageCodes.length > 0) {
+        return apiClient.getShowsWithLanguages(languageCodes, selectedLibrary || undefined);
+      } else {
+        return apiClient.getShows(selectedLibrary || undefined, undefined, true);
+      }
+    },
     staleTime: 5 * 60 * 1000, // Cache for 5 minutes
   });
 
-  // Filter shows based on search term
+  // Filter shows based on search term (language filtering is handled by backend)
   const filteredShows = showsData?.shows.filter((show: Show) =>
     show.title.toLowerCase().includes(searchTerm.toLowerCase())
   ) || [];
+
 
   // Use React Query for fetching counts with proper caching
   const countQueries = useQueries({
@@ -55,163 +75,316 @@ export const Shows: React.FC = () => {
   const isLoadingCounts = countQueries.some(q => q.isLoading);
 
   return (
-    <div className="space-y-8">
-      {/* Header */}
-      <div>
-        <h1 className="text-4xl font-bold text-plex-gray-100 mb-4">TV Shows</h1>
-        <p className="text-lg text-plex-gray-400">
-          Browse your Plex TV show library and manage subtitles.
-        </p>
-      </div>
-
-      {/* Filters */}
-      <div className="flex flex-col md:flex-row gap-4">
-        {/* Search */}
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-plex-gray-500" />
-          <input
-            type="text"
-            placeholder="Search shows..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="input-field pl-10 w-full"
-          />
-        </div>
-
-        {/* Library Filter */}
-        {libraries?.libraries && libraries.libraries.length > 1 && (
-          <select
-            value={selectedLibrary}
-            onChange={(e) => setSelectedLibrary(e.target.value)}
-            className="input-field min-w-48"
-          >
-            <option value="">All Libraries</option>
-            {libraries.libraries.map((library) => (
-              <option key={library.key} value={library.title}>
-                {library.title} ({library.show_count} shows)
-              </option>
-            ))}
-          </select>
-        )}
-      </div>
-
-      {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="card text-center p-4">
-          <div className="text-2xl font-bold text-plex-orange">{showsData?.count || 0}</div>
-          <div className="text-sm text-plex-gray-400">Total Shows</div>
-        </div>
-        <div className="card text-center p-4">
-          <div className="text-2xl font-bold text-blue-400">{filteredShows.length}</div>
-          <div className="text-sm text-plex-gray-400">Filtered</div>
-        </div>
-        <div className="card text-center p-4">
-          <div className="text-2xl font-bold text-green-400">
-            {libraries?.libraries?.length || 0}
+    <div className="min-h-screen">
+      {/* ELEGANT HEADER */}
+      <section className="py-12 lg:py-16">
+        <div className="px-6 md:px-8">
+          <div className="text-center mb-12">
+            <h1 className="font-serif font-bold text-4xl md:text-5xl lg:text-6xl text-cream-500 mb-6 tracking-tight">
+              TV Shows
+            </h1>
+            <p className="text-lg md:text-xl text-mist-500 font-light leading-relaxed max-w-2xl mx-auto">
+              Browse your Plex TV show library and manage subtitles.
+            </p>
+            
+            {/* Elegant Divider */}
+            <div className="mt-8 h-px bg-gradient-to-r from-transparent via-gold-500/30 to-transparent max-w-sm mx-auto"></div>
           </div>
-          <div className="text-sm text-plex-gray-400">Libraries</div>
-        </div>
-        <div className="card text-center p-4">
-          <div className="text-2xl font-bold text-purple-400">
-            {isLoadingCounts ? '...' : totalEpisodes}
-          </div>
-          <div className="text-sm text-plex-gray-400">Episodes</div>
-        </div>
-      </div>
 
-      {/* Shows Grid */}
-      {isLoading ? (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
-          {Array.from({ length: 10 }).map((_, i) => (
-            <div key={i} className="card p-4 animate-pulse">
-              <div className="aspect-[2/3] bg-plex-gray-700 rounded-lg mb-3" />
-              <div className="h-4 bg-plex-gray-700 rounded mb-2" />
-              <div className="h-3 bg-plex-gray-700 rounded w-3/4" />
+          {/* SEARCH & FILTERS */}
+          <div className="mb-12">
+            {/* First Row: Search and Library */}
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-4 md:gap-6 mb-4">
+              {/* Search */}
+              <div className="relative md:col-span-8">
+                <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-mist-500" />
+                <input
+                  type="text"
+                  placeholder="Search your collection..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full bg-charcoal-500 border border-sage-500/30 text-cream-500 rounded-xl pl-12 pr-4 py-4 
+                           focus:outline-none focus:ring-2 focus:ring-gold-500/50 focus:border-gold-500/50
+                           placeholder:text-mist-500 font-light transition-all duration-200"
+                />
+              </div>
+
+              {/* Library Filter */}
+              <div className="md:col-span-3">
+                {libraries?.libraries && libraries.libraries.length > 1 && (
+                  <select
+                    value={selectedLibrary}
+                    onChange={(e) => setSelectedLibrary(e.target.value)}
+                    className="w-full bg-charcoal-500 border border-sage-500/30 text-cream-500 rounded-xl px-6 md:px-8 py-4
+                             focus:outline-none focus:ring-2 focus:ring-gold-500/50 focus:border-gold-500/50
+                             font-light transition-all duration-200"
+                  >
+                    <option value="">All Libraries</option>
+                    {libraries.libraries.map((library) => (
+                      <option key={library.key} value={library.title}>
+                        {library.title}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+
+              {/* View Toggle */}
+              <div className="md:col-span-1 flex">
+                <div className="flex bg-charcoal-500 border border-sage-500/30 rounded-xl p-1">
+                  <button
+                    onClick={() => setViewMode('grid')}
+                    className={`p-2 rounded-lg transition-all duration-200 ${
+                      viewMode === 'grid' 
+                        ? 'bg-gold-500 text-black' 
+                        : 'text-mist-500 hover:text-cream-500'
+                    }`}
+                  >
+                    <Grid className="w-5 h-5" />
+                  </button>
+                  <button
+                    onClick={() => setViewMode('list')}
+                    className={`p-2 rounded-lg transition-all duration-200 ${
+                      viewMode === 'list' 
+                        ? 'bg-gold-500 text-black' 
+                        : 'text-mist-500 hover:text-cream-500'
+                    }`}
+                  >
+                    <List className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
             </div>
-          ))}
+
+            {/* Second Row: Language Filter */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
+              <div className="md:col-span-2">
+                <LanguageFilter
+                  selectedLanguages={selectedLanguages}
+                  onLanguagesChange={setSelectedLanguages}
+                  maxSelections={2}
+                />
+              </div>
+              <div className="flex items-center text-sm text-mist-500">
+                {selectedLanguages.length > 0 && (
+                  <div className="bg-charcoal-500/50 rounded-xl px-4 py-2 border border-gold-500/20">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 bg-gold-500 rounded-full animate-pulse" />
+                      <span>Shows with {selectedLanguages.map(l => l.name).join(' + ')} subtitles</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* SUBTLE STATS */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6 mb-12">
+            <div className="text-center p-4 md:p-6 bg-charcoal-500/50 rounded-xl backdrop-blur-sm border border-sage-500/20">
+              <p className="text-xl md:text-2xl font-serif font-bold text-cream-500 mb-1">
+                {showsData?.count || 0}
+              </p>
+              <p className="text-mist-500 text-sm font-light">Total Shows</p>
+            </div>
+            
+            <div className="text-center p-4 md:p-6 bg-charcoal-500/50 rounded-xl backdrop-blur-sm border border-sage-500/20">
+              <p className="text-xl md:text-2xl font-serif font-bold text-cream-500 mb-1">
+                {filteredShows.length}
+              </p>
+              <p className="text-mist-500 text-sm font-light">Filtered</p>
+            </div>
+            
+            <div className="text-center p-4 md:p-6 bg-charcoal-500/50 rounded-xl backdrop-blur-sm border border-sage-500/20">
+              <p className="text-xl md:text-2xl font-serif font-bold text-cream-500 mb-1">
+                {libraries?.libraries?.length || 0}
+              </p>
+              <p className="text-mist-500 text-sm font-light">Libraries</p>
+            </div>
+            
+            <div className="text-center p-4 md:p-6 bg-charcoal-500/50 rounded-xl backdrop-blur-sm border border-sage-500/20">
+              <p className="text-xl md:text-2xl font-serif font-bold text-cream-500 mb-1">
+                {isLoadingCounts ? '...' : totalEpisodes.toLocaleString()}
+              </p>
+              <p className="text-mist-500 text-sm font-light">Episodes</p>
+            </div>
+          </div>
         </div>
-      ) : filteredShows.length > 0 ? (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-8">
-          {filteredShows.map((show) => (
-            <ShowCard 
-              key={show.id} 
-              show={show} 
-              counts={showCounts.get(show.id)}
-            />
-          ))}
+      </section>
+
+      {/* SHOWS GALLERY */}
+      <section className="pb-12">
+        <div className="px-6 md:px-8">
+          {isLoading ? (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
+              {Array.from({ length: 12 }).map((_, i) => (
+                <div key={i} className="animate-pulse">
+                  <div className="aspect-[2/3] bg-charcoal-500 rounded-xl mb-3" />
+                  <div className="h-4 bg-charcoal-500 rounded mb-2" />
+                  <div className="h-3 bg-charcoal-500 rounded w-3/4" />
+                </div>
+              ))}
+            </div>
+          ) : filteredShows.length > 0 ? (
+            <div className={
+              viewMode === 'grid' 
+                ? "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6"
+                : "space-y-4"
+            }>
+              {filteredShows.map((show) => (
+                <ShowCard 
+                  key={show.id} 
+                  show={show} 
+                  counts={showCounts.get(show.id)}
+                  viewMode={viewMode}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-20">
+              <div className="w-20 h-20 bg-charcoal-500/50 rounded-xl flex items-center justify-center mx-auto mb-6">
+                <Film className="w-10 h-10 text-sage-500" />
+              </div>
+              <h3 className="font-serif font-bold text-2xl text-cream-500 mb-3">No shows found</h3>
+              <p className="text-mist-500 font-light max-w-md mx-auto">
+                {searchTerm 
+                  ? 'Try adjusting your search terms or browse all shows.' 
+                  : 'No shows available in your library.'}
+              </p>
+            </div>
+          )}
         </div>
-      ) : (
-        <div className="text-center py-12">
-          <Film className="w-16 h-16 text-plex-gray-600 mx-auto mb-4" />
-          <h3 className="text-xl font-semibold text-plex-gray-300 mb-2">No shows found</h3>
-          <p className="text-plex-gray-500">
-            {searchTerm ? 'Try adjusting your search terms.' : 'No shows available in your library.'}
-          </p>
-        </div>
-      )}
+      </section>
     </div>
   );
 };
 
 const ShowCard: React.FC<{ 
   show: Show; 
-  counts?: { episode_count: number; season_count: number } 
-}> = ({ show, counts }) => {
+  counts?: { episode_count: number; season_count: number };
+  viewMode: 'grid' | 'list';
+}> = ({ show, counts, viewMode }) => {
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imageError, setImageError] = useState(false);
 
+  if (viewMode === 'list') {
+    return (
+      <Link to={`/shows/${show.id}`} className="group block">
+        <div className="bg-charcoal-500 border border-sage-500/20 rounded-xl p-6 hover:border-gold-500/50 transition-all duration-300 hover:-translate-y-1">
+          <div className="flex items-center gap-6">
+            {/* Thumbnail */}
+            <div className="w-16 h-24 bg-slate-500 rounded-lg overflow-hidden flex-shrink-0">
+              {show.thumb && !imageError ? (
+                <img
+                  src={show.thumb}
+                  alt={show.title}
+                  className="w-full h-full object-cover"
+                  loading="lazy"
+                  onError={() => setImageError(true)}
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center">
+                  <Film className="w-6 h-6 text-sage-500" />
+                </div>
+              )}
+            </div>
+
+            {/* Content */}
+            <div className="flex-1">
+              <h3 className="font-serif font-bold text-xl text-cream-500 mb-2 group-hover:text-gold-500 transition-colors">
+                {show.title}
+              </h3>
+              <div className="flex items-center gap-6 text-sm text-mist-500">
+                <div className="flex items-center gap-2">
+                  <Calendar className="w-4 h-4" />
+                  <span>{show.year || 'Unknown'}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Play className="w-4 h-4" />
+                  <span>
+                    {counts?.episode_count !== undefined 
+                      ? `${counts.episode_count} episodes` 
+                      : 'Loading...'}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Subtitles className="w-4 h-4" />
+                  <span>
+                    {counts?.season_count !== undefined 
+                      ? `${counts.season_count} seasons` 
+                      : 'Loading...'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Action Arrow */}
+            <div className="text-gold-500 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+              <Play className="w-5 h-5" />
+            </div>
+          </div>
+        </div>
+      </Link>
+    );
+  }
+
   return (
-    <Link
-      to={`/shows/${show.id}`}
-      className="group block"
-    >
-      <div className="card hover:border-plex-orange/50 transition-all duration-200 p-4 h-full">
-        {/* Poster */}
-        <div className="aspect-[2/3] bg-plex-gray-700 rounded-lg mb-3 overflow-hidden relative group-hover:scale-105 transition-transform duration-200">
-          {show.thumb && !imageError ? (
+    <Link to={`/shows/${show.id}`} className="group block">
+      <div className="relative overflow-hidden rounded-xl bg-charcoal-500 shadow-lg hover:shadow-2xl transition-all duration-300 hover:-translate-y-2">
+        {/* Show Thumbnail */}
+        <div className="aspect-[2/3] overflow-hidden relative">
+          {fixPlexImageUrl(show.thumb) && !imageError ? (
             <>
               {/* Placeholder while loading */}
               {!imageLoaded && (
-                <div className="absolute inset-0 bg-plex-gray-700 animate-pulse flex items-center justify-center">
-                  <Film className="w-12 h-12 text-plex-gray-500" />
+                <div className="absolute inset-0 bg-slate-500 animate-pulse flex items-center justify-center">
+                  <Film className="w-12 h-12 text-sage-500" />
                 </div>
               )}
-              {/* Actual image with lazy loading */}
+              {/* Actual image */}
               <img
-                src={show.thumb}
+                src={fixPlexImageUrl(show.thumb)!}
                 alt={show.title}
-                className={`w-full h-full object-cover transition-opacity duration-300 ${
+                className={`w-full h-full object-cover group-hover:scale-110 transition-transform duration-500 ${
                   imageLoaded ? 'opacity-100' : 'opacity-0'
                 }`}
                 loading="lazy"
-                onLoad={() => setImageLoaded(true)}
-                onError={() => setImageError(true)}
+                onLoad={() => {
+                  setImageLoaded(true);
+                }}
+                onError={(e) => {
+                  setImageError(true);
+                }}
               />
             </>
           ) : (
-            <div className="w-full h-full flex items-center justify-center">
-              <Film className="w-12 h-12 text-plex-gray-500" />
+            <div className="w-full h-full flex items-center justify-center bg-sage-500/20">
+              <Film className="w-12 h-12 text-sage-500" />
             </div>
           )}
           
-          {/* Overlay */}
-          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors duration-200 flex items-center justify-center">
-            <Play className="w-8 h-8 text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
+          {/* Elegant Overlay */}
+          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+          
+          {/* Hover Action */}
+          <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+            <div className="bg-gold-500 text-black px-6 md:px-8 py-2 rounded-lg font-medium shadow-lg transform translate-y-2 group-hover:translate-y-0 transition-transform duration-300">
+              Manage Subtitles
+            </div>
           </div>
         </div>
 
-        {/* Info */}
-        <div className="space-y-2">
-          <h3 className="font-semibold text-plex-gray-100 group-hover:text-plex-orange transition-colors line-clamp-2">
+        {/* Content */}
+        <div className="p-4">
+          <h3 className="font-serif font-bold text-cream-500 text-lg mb-2 line-clamp-2 group-hover:text-gold-500 transition-colors duration-200">
             {show.title}
           </h3>
           
-          <div className="flex items-center gap-2 text-xs text-plex-gray-400">
+          <div className="flex items-center gap-2 text-xs text-mist-500 mb-2">
             <Calendar className="w-3 h-3" />
             <span>{show.year || 'Unknown'}</span>
           </div>
 
-          <div className="flex items-center justify-between text-xs text-plex-gray-400">
+          <div className="flex items-center justify-between text-xs text-mist-500">
             <div className="flex items-center gap-1">
               <Play className="w-3 h-3" />
               <span>

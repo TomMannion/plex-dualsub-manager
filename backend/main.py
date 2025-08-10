@@ -2,9 +2,9 @@
 FastAPI backend for Plex Dual Subtitle Manager
 """
 
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Request, Header
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from contextlib import asynccontextmanager
 from typing import List, Optional, Dict, Any
 import os
@@ -23,15 +23,15 @@ from services.subtitle_service import subtitle_service, DualSubtitleConfig, Subt
 show_counts_cache: Dict[str, Dict[str, Any]] = {}
 CACHE_TTL = 300  # 5 minutes TTL for cache
 
+def get_plex_token(request: Request) -> Optional[str]:
+    """Extract Plex token from request headers"""
+    return request.headers.get("x-plex-token")
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Initialize connection to Plex on startup"""
-    try:
-        plex = plex_service.connect()
-        print(f"✅ Connected to Plex: {plex.friendlyName}")
-    except Exception as e:
-        print(f"❌ Failed to connect to Plex: {e}")
-        print("Please run test_plex_connection.py first")
+    """Initialize app on startup"""
+    print("🚀 Plex Dual Subtitle Manager starting up")
+    print("📝 Plex authentication is now handled per-request via frontend tokens")
     yield
     # Cleanup code here (if needed)
 
@@ -73,26 +73,35 @@ async def root():
     }
 
 @app.get("/api/status")
-async def get_status():
+async def get_status(request: Request):
     """Check Plex connection status"""
+    token = get_plex_token(request)
+    
     try:
-        plex = plex_service.connect()
+        plex = plex_service.connect(token)
         return {
             "connected": True,
             "server_name": plex.friendlyName,
-            "version": plex.version
+            "version": plex.version,
+            "authenticated": bool(token)
         }
     except Exception as e:
         return {
             "connected": False,
+            "authenticated": bool(token),
             "error": str(e)
         }
 
 @app.get("/api/libraries")
-async def get_libraries():
+async def get_libraries(request: Request):
     """Get all TV show libraries"""
+    token = get_plex_token(request)
+    
+    if not token:
+        raise HTTPException(status_code=401, detail="Plex authentication required")
+    
     try:
-        libraries = plex_service.get_tv_libraries()
+        libraries = plex_service.get_tv_libraries(token)
         return {
             "libraries": [
                 {
@@ -109,6 +118,7 @@ async def get_libraries():
 
 @app.get("/api/shows")
 async def get_shows(
+    request: Request,
     library: Optional[str] = None, 
     limit: Optional[int] = None,
     fast_mode: bool = True,  # New parameter for fast loading
@@ -122,8 +132,13 @@ async def get_shows(
         fast_mode: If True, skip expensive operations like episode/season counts
         offset: Pagination offset
     """
+    token = get_plex_token(request)
+    
+    if not token:
+        raise HTTPException(status_code=401, detail="Plex authentication required")
+    
     try:
-        shows = plex_service.get_all_shows(library)
+        shows = plex_service.get_all_shows(library, token)
         
         # Apply pagination
         total_count = len(shows)
@@ -142,7 +157,7 @@ async def get_shows(
                         "id": show.ratingKey,
                         "title": show.title,
                         "year": show.year,
-                        "thumb": plex_service.get_full_image_url(show.thumb),
+                        "thumb": plex_service.get_full_image_url(show.thumb, token),
                         "episode_count": 0,  # Placeholder, will be loaded separately
                         "season_count": 0,   # Placeholder, will be loaded separately
                         "summary": getattr(show, 'summary', '')[:200] if hasattr(show, 'summary') else ''
@@ -160,7 +175,7 @@ async def get_shows(
                         "id": show.ratingKey,
                         "title": show.title,
                         "year": show.year,
-                        "thumb": plex_service.get_full_image_url(show.thumb),
+                        "thumb": plex_service.get_full_image_url(show.thumb, token),
                         "episode_count": len(show.episodes()),
                         "season_count": len(show.seasons())
                     }
@@ -170,12 +185,180 @@ async def get_shows(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@app.get("/api/shows/with-languages")
+async def get_shows_with_languages(
+    request: Request,
+    languages: Optional[str] = None,  # Comma-separated language codes
+    library: Optional[str] = None,
+    limit: Optional[int] = None,
+    offset: int = 0
+):
+    """Get TV shows filtered by subtitle languages
+    
+    Args:
+        languages: Comma-separated language codes (e.g., "en,zh")
+        library: Optional library name  
+        limit: Optional limit on number of shows
+        offset: Pagination offset
+    """
+    token = get_plex_token(request)
+    
+    if not token:
+        raise HTTPException(status_code=401, detail="Plex authentication required")
+    
+    try:
+        plex = plex_service.connect(token)
+        shows = plex_service.get_all_shows(library, token)
+        
+        # Parse requested languages
+        requested_languages = []
+        if languages:
+            requested_languages = [lang.strip().lower() for lang in languages.split(',')]
+        
+        filtered_shows = []
+        
+        for show in shows:
+            try:
+                # Check if show has subtitle files for requested languages
+                if not requested_languages or has_subtitle_languages(show, requested_languages, plex):
+                    show_data = {
+                        "id": str(show.ratingKey),
+                        "title": show.title,
+                        "year": show.year,
+                        "summary": show.summary,
+                        "thumb": plex_service.get_full_image_url(show.thumb, token),
+                        "art": plex_service.get_full_image_url(show.art, token),
+                        "episode_count": len(show.episodes()) if not requested_languages else None,  # Skip expensive ops when filtering
+                        "season_count": len(show.seasons()) if not requested_languages else None,
+                        "available_languages": get_show_subtitle_languages(show, plex) if requested_languages else []
+                    }
+                    filtered_shows.append(show_data)
+                    
+            except Exception as e:
+                print(f"Error processing show {show.title}: {e}")
+                continue
+        
+        # Apply pagination
+        if offset > 0:
+            filtered_shows = filtered_shows[offset:]
+        if limit:
+            filtered_shows = filtered_shows[:limit]
+        
+        return {
+            "count": len(filtered_shows),
+            "shows": filtered_shows,
+            "requested_languages": requested_languages
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+def has_subtitle_languages(show, requested_languages: list, plex) -> bool:
+    """Check if a show has subtitle files for all requested languages"""
+    try:
+        available_languages = get_show_subtitle_languages(show, plex)
+        available_codes = [lang.lower() for lang in available_languages]
+        
+        # Check if all requested languages are available
+        return all(lang in available_codes for lang in requested_languages)
+    except:
+        return False
+
+
+def get_show_subtitle_languages(show, plex) -> list:
+    """Extract subtitle languages from a show's episodes"""
+    import os
+    import re
+    
+    languages = set()
+    
+    try:
+        # Get first few episodes to sample subtitle languages (for performance)
+        episodes = show.episodes()[:3]  # Sample first 3 episodes
+        print(f"DEBUG: Checking {len(episodes)} episodes for show: {show.title}")
+        
+        for episode in episodes:
+            if not hasattr(episode, 'media') or not episode.media:
+                continue
+                
+            for media in episode.media:
+                for part in media.parts:
+                    if hasattr(part, 'file') and part.file:
+                        # Get directory path
+                        episode_dir = os.path.dirname(part.file)
+                        print(f"DEBUG: Checking directory: {episode_dir}")
+                        
+                        try:
+                            # Look for subtitle files in the episode directory
+                            if os.path.exists(episode_dir):
+                                subtitle_files = [f for f in os.listdir(episode_dir) 
+                                                if f.lower().endswith(('.srt', '.ass', '.vtt', '.sub', '.ssa'))]
+                                print(f"DEBUG: Found subtitle files: {subtitle_files}")
+                                
+                                for filename in subtitle_files:
+                                    # Extract language codes from filename
+                                    detected_langs = extract_languages_from_filename(filename)
+                                    print(f"DEBUG: File '{filename}' -> detected languages: {detected_langs}")
+                                    languages.update(detected_langs)
+                            else:
+                                print(f"DEBUG: Directory doesn't exist: {episode_dir}")
+                        except (OSError, PermissionError) as e:
+                            # Directory not accessible or doesn't exist
+                            print(f"DEBUG: Cannot access directory {episode_dir}: {e}")
+                            continue
+    except Exception as e:
+        print(f"Error getting subtitle languages for {show.title}: {e}")
+    
+    final_languages = list(languages)
+    print(f"DEBUG: Final detected languages for {show.title}: {final_languages}")
+    return final_languages
+
+
+def extract_languages_from_filename(filename: str) -> list:
+    """Extract language codes from subtitle filename"""
+    import re
+    
+    # Common language patterns in subtitle filenames
+    language_patterns = {
+        'en': r'\b(en|eng|english)\b',
+        'zh': r'\b(zh|chi|chinese|chs)\b', 
+        'zh-hant': r'\b(zh-tw|zh-hk|zht|cht|tc|traditional)\b',
+        'es': r'\b(es|spa|spanish|espanol)\b',
+        'fr': r'\b(fr|fre|fra|french|francais)\b',
+        'de': r'\b(de|ger|deu|german|deutsch)\b',
+        'ja': r'\b(ja|jp|jpn|japanese)\b',
+        'ko': r'\b(ko|kr|kor|korean)\b',
+        'pt': r'\b(pt|por|portuguese)\b',
+        'pt-br': r'\b(pt-br|ptbr|pb|brazilian)\b',
+        'ru': r'\b(ru|rus|russian)\b',
+        'ar': r'\b(ar|ara|arabic)\b',
+        'it': r'\b(it|ita|italian)\b',
+        'nl': r'\b(nl|dut|nld|dutch)\b'
+    }
+    
+    filename_lower = filename.lower()
+    detected_languages = []
+    
+    for lang_code, pattern in language_patterns.items():
+        if re.search(pattern, filename_lower):
+            detected_languages.append(lang_code)
+    
+    return detected_languages
+
+
 @app.get("/api/shows/{show_id}/counts")
-async def get_show_counts(show_id: str):
+async def get_show_counts(show_id: str, request: Request):
     """Get episode and season counts for a specific show (with caching)"""
+    token = get_plex_token(request)
+    
+    if not token:
+        raise HTTPException(status_code=401, detail="Plex authentication required")
+    
     try:
         # Check cache first
-        cache_key = f"counts_{show_id}"
+        cache_key = f"counts_{show_id}_{token[:10]}"  # Include token hash in cache key
         if cache_key in show_counts_cache:
             cached_data = show_counts_cache[cache_key]
             # Check if cache is still valid
@@ -183,7 +366,7 @@ async def get_show_counts(show_id: str):
                 return cached_data['data']
         
         # Fetch from Plex if not in cache or expired
-        show = plex_service.get_show(show_id)
+        show = plex_service.get_show(show_id, token)
         result = {
             "id": show.ratingKey,
             "episode_count": len(show.episodes()),
@@ -201,10 +384,15 @@ async def get_show_counts(show_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/shows/{show_id}")
-async def get_show_detail(show_id: str):
+async def get_show_detail(show_id: str, request: Request):
     """Get detailed information about a specific show"""
+    token = get_plex_token(request)
+    
+    if not token:
+        raise HTTPException(status_code=401, detail="Plex authentication required")
+    
     try:
-        show = plex_service.get_show(show_id)
+        show = plex_service.get_show(show_id, token)
         
         # Get all episodes and check subtitle status
         episodes = show.episodes()
@@ -221,15 +409,15 @@ async def get_show_detail(show_id: str):
                 total_external_subs += len(file_info.get('external_subtitles', []))
                 total_embedded_subs += len(file_info.get('embedded_subtitles', []))
             
-            episode_list.append(plex_service.format_episode_info(episode))
+            episode_list.append(plex_service.format_episode_info(episode, token))
         
         return {
             "id": show.ratingKey,
             "title": show.title,
             "year": show.year,
             "summary": show.summary,
-            "thumb": plex_service.get_full_image_url(show.thumb),
-            "art": plex_service.get_full_image_url(show.art),
+            "thumb": plex_service.get_full_image_url(show.thumb, token),
+            "art": plex_service.get_full_image_url(show.art, token),
             "episode_count": len(episodes),
             "season_count": len(show.seasons()),
             "episodes_with_subtitles": episodes_with_subs,
@@ -251,21 +439,31 @@ async def get_show_detail(show_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/episodes/{episode_id}")
-async def get_episode_detail(episode_id: str):
+async def get_episode_detail(episode_id: str, request: Request):
     """Get detailed information about a specific episode"""
+    token = get_plex_token(request)
+    
+    if not token:
+        raise HTTPException(status_code=401, detail="Plex authentication required")
+    
     try:
-        plex = plex_service.connect()
+        plex = plex_service.connect(token)
         episode = plex.fetchItem(int(episode_id))
         
-        return plex_service.format_episode_info(episode)
+        return plex_service.format_episode_info(episode, token)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/episodes/{episode_id}/subtitles")
-async def get_episode_subtitles(episode_id: str):
+async def get_episode_subtitles(episode_id: str, request: Request):
     """Get all subtitles for an episode"""
+    token = get_plex_token(request)
+    
+    if not token:
+        raise HTTPException(status_code=401, detail="Plex authentication required")
+    
     try:
-        plex = plex_service.connect()
+        plex = plex_service.connect(token)
         episode = plex.fetchItem(int(episode_id))
         
         file_info = plex_service.get_episode_file_info(episode)
@@ -291,13 +489,19 @@ async def get_episode_subtitles(episode_id: str):
 @app.post("/api/episodes/{episode_id}/subtitles/upload")
 async def upload_subtitle(
     episode_id: str,
+    request: Request,
     file: UploadFile = File(...),
     language: str = Form("en")
 ):
     """Upload a subtitle file for an episode"""
+    token = get_plex_token(request)
+    
+    if not token:
+        raise HTTPException(status_code=401, detail="Plex authentication required")
+    
     try:
         # Get episode information
-        plex = plex_service.connect()
+        plex = plex_service.connect(token)
         episode = plex.fetchItem(int(episode_id))
         
         # Get the naming pattern
@@ -371,6 +575,7 @@ async def delete_subtitle(file_path: str):
 @app.post("/api/episodes/{episode_id}/subtitles/dual")
 async def create_dual_subtitle(
     episode_id: str,
+    request: Request,
     primary_subtitle: str = Form(...),  # Path to primary subtitle file
     secondary_subtitle: str = Form(...),  # Path to secondary subtitle file
     primary_language: str = Form("ja"),
@@ -386,9 +591,14 @@ async def create_dual_subtitle(
     enable_sync: bool = Form(True)  # Enable automatic synchronization
 ):
     """Create a dual subtitle file from two existing subtitles"""
+    token = get_plex_token(request)
+    
+    if not token:
+        raise HTTPException(status_code=401, detail="Plex authentication required")
+    
     try:
         # Get episode information
-        plex = plex_service.connect()
+        plex = plex_service.connect(token)
         episode = plex.fetchItem(int(episode_id))
         
         # Validate subtitle files exist
@@ -571,14 +781,20 @@ async def adjust_subtitle_timing(
 @app.post("/api/episodes/{episode_id}/subtitles/extract-embedded")
 async def extract_embedded_subtitle(
     episode_id: str,
+    request: Request,
     stream_index: int = Form(...),
     language_code: str = Form("en"),
     subtitle_type: str = Form("normal")  # normal or forced
 ):
     """Extract an embedded subtitle stream to external file"""
+    token = get_plex_token(request)
+    
+    if not token:
+        raise HTTPException(status_code=401, detail="Plex authentication required")
+    
     try:
         # Get episode information
-        plex = plex_service.connect()
+        plex = plex_service.connect(token)
         episode = plex.fetchItem(int(episode_id))
         
         file_info = plex_service.get_episode_file_info(episode)
@@ -613,10 +829,15 @@ async def extract_embedded_subtitle(
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/episodes/{episode_id}/debug-streams")
-async def debug_episode_streams(episode_id: str):
+async def debug_episode_streams(episode_id: str, request: Request):
     """Debug endpoint to see all streams for an episode"""
+    token = get_plex_token(request)
+    
+    if not token:
+        raise HTTPException(status_code=401, detail="Plex authentication required")
+    
     try:
-        plex = plex_service.connect()
+        plex = plex_service.connect(token)
         episode = plex.fetchItem(int(episode_id))
         
         if not episode.media:
@@ -651,6 +872,55 @@ async def debug_episode_streams(episode_id: str):
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/plex-proxy/{path:path}")
+async def proxy_plex_image(path: str, request: Request, token: Optional[str] = None):
+    """Proxy Plex images through backend to handle authentication and server URL resolution"""
+    # Try to get token from query param first, then headers
+    auth_token = token or get_plex_token(request)
+    
+    if not auth_token:
+        raise HTTPException(status_code=401, detail="Plex authentication required")
+    
+    try:
+        # Connect to Plex and get the proper server URL
+        plex = plex_service.connect(auth_token)
+        
+        # Construct the full image URL
+        image_url = f"{plex._baseurl}/{path}"
+        
+        # Import httpx for making the HTTP request
+        try:
+            import httpx
+        except ImportError:
+            # Fallback to requests if httpx not available
+            import requests as httpx_fallback
+            
+            response = httpx_fallback.get(image_url, timeout=10)
+            return Response(
+                content=response.content,
+                media_type=response.headers.get("content-type", "image/jpeg"),
+                headers={"Cache-Control": "max-age=3600"}
+            )
+        
+        # Use httpx for async request
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(image_url)
+            
+            if response.status_code == 200:
+                return Response(
+                    content=response.content,
+                    media_type=response.headers.get("content-type", "image/jpeg"),
+                    headers={"Cache-Control": "max-age=3600"}
+                )
+            else:
+                raise HTTPException(status_code=response.status_code, detail="Failed to fetch image from Plex")
+                
+    except Exception as e:
+        print(f"Error proxying Plex image: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to proxy image: {str(e)}")
+
 
 if __name__ == "__main__":
     import uvicorn

@@ -12,6 +12,7 @@ import type {
   UploadResult,
   ExtractResult,
 } from '../types';
+import PlexAuthService from '../services/plexAuth';
 
 const API_BASE = 'http://localhost:8000';
 
@@ -20,6 +21,32 @@ const api = axios.create({
   baseURL: API_BASE,
   timeout: 30000,
 });
+
+// Add request interceptor to include Plex auth token
+api.interceptors.request.use((config) => {
+  try {
+    const authHeaders = PlexAuthService.getAuthHeaders();
+    config.headers = { ...config.headers, ...authHeaders };
+  } catch (error) {
+    // No auth token available - this is ok for some endpoints
+    console.debug('No Plex auth token available');
+  }
+  return config;
+});
+
+// Add response interceptor to handle auth errors
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      // Token is invalid, clear it
+      PlexAuthService.logout();
+      // You might want to redirect to login or show login modal here
+      console.warn('Plex authentication expired');
+    }
+    return Promise.reject(error);
+  }
+);
 
 // API Client
 export const apiClient = {
@@ -43,6 +70,20 @@ export const apiClient = {
     params.append('fast_mode', fastMode.toString());
     
     const response = await api.get(`/api/shows?${params.toString()}`);
+    return response.data;
+  },
+
+  async getShowsWithLanguages(
+    languages?: string[], 
+    library?: string, 
+    limit?: number
+  ): Promise<{ count: number; shows: Show[]; requested_languages: string[] }> {
+    const params = new URLSearchParams();
+    if (languages && languages.length > 0) params.append('languages', languages.join(','));
+    if (library) params.append('library', library);
+    if (limit) params.append('limit', limit.toString());
+    
+    const response = await api.get(`/api/shows/with-languages?${params.toString()}`);
     return response.data;
   },
 

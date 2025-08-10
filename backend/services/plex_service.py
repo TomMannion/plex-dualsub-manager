@@ -13,28 +13,75 @@ from dotenv import load_dotenv
 class PlexService:
     def __init__(self):
         load_dotenv()
-        self.server_url = os.getenv('PLEX_URL')
-        self.token = os.getenv('PLEX_TOKEN')
-        self.plex = None
+        # Fallback to .env for backward compatibility, but prefer dynamic tokens
+        self.fallback_server_url = os.getenv('PLEX_URL')
+        self.fallback_token = os.getenv('PLEX_TOKEN')
         self.tv_library_name = os.getenv('PLEX_TV_LIBRARY', 'TV Shows')
+        self._connection_cache = {}  # Cache connections per token
         
-    def connect(self) -> PlexServer:
-        """Connect to Plex server using saved credentials"""
-        if not self.plex:
-            if not self.server_url or not self.token:
-                raise Exception("No Plex credentials found. Please run test_plex_connection.py first")
-            self.plex = PlexServer(self.server_url, self.token)
-        return self.plex
+    def connect(self, token: Optional[str] = None, server_url: Optional[str] = None) -> PlexServer:
+        """Connect to Plex server using provided or fallback credentials"""
+        # Use provided token or fallback
+        auth_token = token or self.fallback_token
+        plex_url = server_url or self.fallback_server_url
+        
+        if not auth_token:
+            raise Exception("No Plex authentication token provided")
+        
+        # Use cached connection if available
+        cache_key = f"{plex_url}:{auth_token[:10]}"  # Partial token for cache key
+        if cache_key in self._connection_cache:
+            return self._connection_cache[cache_key]
+        
+        # Discover server URL from token if not provided
+        if not plex_url and auth_token:
+            plex_url = self._discover_server_url(auth_token)
+        
+        if not plex_url:
+            raise Exception("No Plex server URL available. Please configure PLEX_URL in .env")
+            
+        # Create new connection
+        plex = PlexServer(plex_url, auth_token)
+        
+        # Cache the connection
+        self._connection_cache[cache_key] = plex
+        
+        return plex
     
-    def get_tv_libraries(self) -> List[ShowSection]:
+    def _discover_server_url(self, token: str) -> Optional[str]:
+        """Discover server URL from MyPlex account using token"""
+        try:
+            from plexapi.myplex import MyPlexAccount
+            account = MyPlexAccount(token=token)
+            
+            # Get servers
+            servers = account.resources()
+            plex_servers = [s for s in servers if s.product == 'Plex Media Server' and s.presence]
+            
+            if plex_servers:
+                # Prefer local connections
+                for server in plex_servers:
+                    for conn in server.connections:
+                        if conn.local:
+                            return conn.uri
+                
+                # Fall back to any connection
+                if plex_servers[0].connections:
+                    return plex_servers[0].connections[0].uri
+        except Exception as e:
+            print(f"Failed to discover server URL: {e}")
+        
+        return None
+    
+    def get_tv_libraries(self, token: Optional[str] = None) -> List[ShowSection]:
         """Get all TV show libraries"""
-        plex = self.connect()
+        plex = self.connect(token)
         libraries = plex.library.sections()
         return [lib for lib in libraries if lib.type == 'show']
     
-    def get_tv_library(self, library_name: Optional[str] = None) -> ShowSection:
+    def get_tv_library(self, library_name: Optional[str] = None, token: Optional[str] = None) -> ShowSection:
         """Get specific TV library by name"""
-        plex = self.connect()
+        plex = self.connect(token)
         
         if library_name:
             try:
@@ -50,28 +97,33 @@ class PlexService:
                 pass  # Fall through to find first available
         
         # Find first available TV library
-        tv_libraries = self.get_tv_libraries()
+        tv_libraries = self.get_tv_libraries(token)
         if not tv_libraries:
             raise Exception("No TV libraries found")
         
         return tv_libraries[0]
     
-    def get_all_shows(self, library_name: Optional[str] = None) -> List[Show]:
+    def get_all_shows(self, library_name: Optional[str] = None, token: Optional[str] = None) -> List[Show]:
         """Get all TV shows from a library"""
-        library = self.get_tv_library(library_name)
+        library = self.get_tv_library(library_name, token)
         return library.all()
     
-    def get_full_image_url(self, relative_url: str) -> str:
+    def get_full_image_url(self, relative_url: str, token: Optional[str] = None, server_url: Optional[str] = None) -> str:
         """Convert relative Plex image URL to full URL with auth"""
         if not relative_url:
             return ""
         if relative_url.startswith('http'):
             return relative_url
-        return f"{self.server_url}{relative_url}?X-Plex-Token={self.token}"
+        
+        # Use provided values or fallbacks
+        auth_token = token or self.fallback_token
+        plex_url = server_url or self.fallback_server_url
+        
+        return f"{plex_url}{relative_url}?X-Plex-Token={auth_token}"
     
-    def get_show(self, show_id: str) -> Show:
+    def get_show(self, show_id: str, token: Optional[str] = None) -> Show:
         """Get specific show by ID"""
-        plex = self.connect()
+        plex = self.connect(token)
         return plex.fetchItem(int(show_id))
     
     def get_episodes(self, show: Show) -> List[Episode]:
@@ -114,10 +166,6 @@ class PlexService:
                     not (hasattr(stream, 'url') and stream.url)  # No external URL
                 )
                 
-                # Debug info (can be removed later)
-                print(f"Stream Debug - Index: {stream_index}, Key: {stream_key}, ID: {stream_id}, "
-                      f"Language: {getattr(stream, 'language', 'N/A')}, "
-                      f"Embedded: {is_truly_embedded}")
                 
                 if is_truly_embedded:
                     embedded_subs.append({
@@ -196,7 +244,7 @@ class PlexService:
             safe_title = safe_title.replace(' ', '.')
             return f"{safe_title}.S{season_num}E{episode_num}"
     
-    def format_episode_info(self, episode: Episode) -> Dict:
+    def format_episode_info(self, episode: Episode, token: Optional[str] = None) -> Dict:
         """Format episode information for API response"""
         file_info = self.get_episode_file_info(episode)
         
@@ -209,7 +257,7 @@ class PlexService:
             'season_episode': f"S{str(episode.parentIndex).zfill(2)}E{str(episode.index).zfill(2)}",
             'file_info': file_info,
             'naming_pattern': self.get_episode_naming_pattern(episode),
-            'thumb': self.get_full_image_url(episode.thumb),
+            'thumb': self.get_full_image_url(episode.thumb, token),
             'duration': episode.duration,
             'viewed': episode.isWatched
         }

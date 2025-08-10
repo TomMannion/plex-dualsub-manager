@@ -1,6 +1,8 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ToastProvider } from './components/ui/Toaster';
+import { AuthProvider } from './contexts/AuthContext';
+import { ProtectedRoute } from './components/ProtectedRoute';
 import { Layout } from './components/Layout';
 import { Dashboard } from './pages/Dashboard';
 import { Shows } from './pages/Shows';
@@ -21,20 +23,24 @@ const queryClient = new QueryClient({
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <ToastProvider>
-        <Router>
-          <div className="min-h-screen bg-plex-gray-900 text-plex-gray-100">
-            <Layout>
-              <Routes>
-                <Route path="/" element={<Dashboard />} />
-                <Route path="/shows" element={<Shows />} />
-                <Route path="/shows/:showId" element={<ShowDetail />} />
-                <Route path="/episodes/:episodeId" element={<EpisodeDetail />} />
-              </Routes>
-            </Layout>
-          </div>
-        </Router>
-      </ToastProvider>
+      <AuthProvider>
+        <ToastProvider>
+          <Router>
+            <ProtectedRoute>
+              <div className="min-h-screen bg-plex-gray-900 text-plex-gray-100">
+                <Layout>
+                  <Routes>
+                    <Route path="/" element={<Dashboard />} />
+                    <Route path="/shows" element={<Shows />} />
+                    <Route path="/shows/:showId" element={<ShowDetail />} />
+                    <Route path="/episodes/:episodeId" element={<EpisodeDetail />} />
+                  </Routes>
+                </Layout>
+              </div>
+            </ProtectedRoute>
+          </Router>
+        </ToastProvider>
+      </AuthProvider>
     </QueryClientProvider>
   );
 }
