@@ -30,8 +30,9 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
   return (
     <div className="flex flex-col h-screen">
       {/* Elegant Navigation */}
-      <header className="bg-charcoal-500/80 border-b border-sage-500/20 px-6 md:px-8 py-4 md:py-6 backdrop-blur-xl">
-        <div className="flex items-center justify-between">
+      <header className="bg-charcoal-500/80 border-b border-sage-500/20 backdrop-blur-xl">
+        <div className="px-6 md:px-8 lg:px-12 xl:px-16 2xl:px-24 max-w-[1920px] 2xl:max-w-[2560px] mx-auto py-4 md:py-6">
+          <div className="flex items-center justify-between">
           {/* Logo & Brand */}
           <div className="flex items-center gap-4 md:gap-8 lg:gap-12 flex-1 min-w-0">
             <Link to="/" className="flex items-center gap-3 md:gap-4 group flex-shrink-0">
@@ -155,6 +156,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
               </nav>
             </div>
           </div>
+        </div>
         </div>
       </header>
 

@@ -37,7 +37,7 @@ export const Dashboard: React.FC = () => {
     <div className="min-h-screen">
       {/* 1. ELEGANT HERO */}
       <section className="py-12 lg:py-20">
-        <div className="text-center px-6 md:px-8">
+        <div className="text-center px-6 md:px-8 lg:px-12 xl:px-16 2xl:px-24 max-w-[1920px] 2xl:max-w-[2560px] mx-auto">
           {/* Personal Welcome */}
           <div className="mb-8">
             <p className="text-mist-500 font-light text-lg lg:text-xl mb-2">
@@ -75,7 +75,7 @@ export const Dashboard: React.FC = () => {
 
       {/* 2. FEATURED CONTENT GALLERY */}
       {recentShowsData?.shows && recentShowsData.shows.length > 0 && (
-        <section className="py-12 px-6 md:px-8">
+        <section className="py-12 px-6 md:px-8 lg:px-12 xl:px-16 2xl:px-24 max-w-[1920px] 2xl:max-w-[2560px] mx-auto">
           <div>
             <div className="mb-12 text-center md:text-left">
               <h2 className="font-serif font-bold text-2xl md:text-3xl text-cream-500 mb-2">
@@ -143,7 +143,7 @@ export const Dashboard: React.FC = () => {
       )}
 
       {/* 3. PRIMARY ACTIONS */}
-      <section className="py-12 px-6 md:px-8">
+      <section className="py-12 px-6 md:px-8 lg:px-12 xl:px-16 2xl:px-24 max-w-[1920px] 2xl:max-w-[2560px] mx-auto">
         <div>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
             {/* Create Dual Subtitles */}
@@ -198,7 +198,7 @@ export const Dashboard: React.FC = () => {
       </section>
 
       {/* 4. SUBTLE STATISTICS */}
-      <section className="py-12 px-6 md:px-8">
+      <section className="py-12 px-6 md:px-8 lg:px-12 xl:px-16 2xl:px-24 max-w-[1920px] 2xl:max-w-[2560px] mx-auto">
         <div>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4 md:gap-6">
             <div className="text-center p-6 bg-charcoal-500/50 rounded-xl backdrop-blur-sm border border-sage-500/20">

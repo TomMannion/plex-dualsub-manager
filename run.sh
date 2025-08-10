@@ -82,10 +82,10 @@ fi
 
 echo -e "${GREEN}✅ Backend running at http://localhost:8000${NC}"
 
-# Start frontend server
+# Start frontend server (with --host to listen on all interfaces)
 echo -e "${BLUE}🚀 Starting frontend server...${NC}"
 cd frontend
-npm run dev &
+npm run dev -- --host 0.0.0.0 &
 FRONTEND_PID=$!
 cd ..
 

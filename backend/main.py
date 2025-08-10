@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 from functools import lru_cache
 import time
+import socket
 
 # Add backend to path
 sys.path.append(str(Path(__file__).parent))
@@ -23,6 +24,19 @@ from services.subtitle_service import subtitle_service, DualSubtitleConfig, Subt
 show_counts_cache: Dict[str, Dict[str, Any]] = {}
 CACHE_TTL = 300  # 5 minutes TTL for cache
 
+def get_local_ip():
+    """Get the local IP address of the machine"""
+    try:
+        # Create a socket connection to determine local IP
+        # This doesn't actually connect but helps determine the route
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        local_ip = s.getsockname()[0]
+        s.close()
+        return local_ip
+    except Exception:
+        return "127.0.0.1"
+
 def get_plex_token(request: Request) -> Optional[str]:
     """Extract Plex token from request headers"""
     return request.headers.get("x-plex-token")
@@ -30,7 +44,11 @@ def get_plex_token(request: Request) -> Optional[str]:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize app on startup"""
+    local_ip = get_local_ip()
     print("🚀 Plex Dual Subtitle Manager starting up")
+    print(f"🌐 Server IP: {local_ip}")
+    print(f"📡 API accessible at: http://{local_ip}:8000")
+    print(f"🖥️  Frontend accessible at: http://{local_ip}:5173")
     print("📝 Plex authentication is now handled per-request via frontend tokens")
     yield
     # Cleanup code here (if needed)
@@ -42,18 +60,35 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Configure CORS for local development
+# Dynamically configure CORS with detected IP
+local_ip = get_local_ip()
+cors_origins = [
+    "http://localhost:3000", 
+    "http://localhost:5173", 
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:5173",
+    "http://localhost:8080",
+    "http://127.0.0.1:8080",
+    f"http://{local_ip}:3000",
+    f"http://{local_ip}:5173",
+    f"http://{local_ip}:8080",
+    "null"  # Allow file:// origins for testing
+]
+
+# Also add common local network ranges if needed
+# This covers most home networks
+for port in [3000, 5173, 8080]:
+    cors_origins.extend([
+        f"http://192.168.0.*:{port}",
+        f"http://192.168.1.*:{port}",
+        f"http://10.0.0.*:{port}",
+    ])
+
+print(f"🔒 CORS configured for: {', '.join(cors_origins[:5])}...")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000", 
-        "http://localhost:5173", 
-        "http://127.0.0.1:3000",
-        "http://localhost:8080",
-        "http://127.0.0.1:8080",
-        "http://192.168.0.56:5173",
-        "null"  # Allow file:// origins for testing
-    ],
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -924,6 +959,17 @@ async def proxy_plex_image(path: str, request: Request, token: Optional[str] = N
 
 if __name__ == "__main__":
     import uvicorn
-    print("Starting Plex Dual Subtitle Manager API...")
-    print("API Documentation: http://localhost:8000/docs")
-    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
+    local_ip = get_local_ip()
+    print("=" * 60)
+    print("🚀 Starting Plex Dual Subtitle Manager API")
+    print("=" * 60)
+    print(f"📡 API will be accessible at:")
+    print(f"   - http://localhost:8000")
+    print(f"   - http://127.0.0.1:8000")
+    print(f"   - http://{local_ip}:8000")
+    print(f"📚 API Documentation:")
+    print(f"   - http://localhost:8000/docs")
+    print(f"   - http://{local_ip}:8000/docs")
+    print("=" * 60)
+    # Listen on all interfaces to allow network access
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

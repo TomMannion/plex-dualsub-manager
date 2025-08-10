@@ -78,7 +78,7 @@ export const Shows: React.FC = () => {
     <div className="min-h-screen">
       {/* ELEGANT HEADER */}
       <section className="py-12 lg:py-16">
-        <div className="px-6 md:px-8">
+        <div className="px-6 md:px-8 lg:px-12 xl:px-16 2xl:px-24 max-w-[1920px] 2xl:max-w-[2560px] mx-auto">
           <div className="text-center mb-12">
             <h1 className="font-serif font-bold text-4xl md:text-5xl lg:text-6xl text-cream-500 mb-6 tracking-tight">
               TV Shows
@@ -213,9 +213,9 @@ export const Shows: React.FC = () => {
 
       {/* SHOWS GALLERY */}
       <section className="pb-12">
-        <div className="px-6 md:px-8">
+        <div className="px-6 md:px-8 lg:px-12 xl:px-16 2xl:px-24 max-w-[1920px] 2xl:max-w-[2560px] mx-auto">
           {isLoading ? (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-4 lg:gap-6">
               {Array.from({ length: 12 }).map((_, i) => (
                 <div key={i} className="animate-pulse">
                   <div className="aspect-[2/3] bg-charcoal-500 rounded-xl mb-3" />
@@ -227,7 +227,7 @@ export const Shows: React.FC = () => {
           ) : filteredShows.length > 0 ? (
             <div className={
               viewMode === 'grid' 
-                ? "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6"
+                ? "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-4 lg:gap-6"
                 : "space-y-4"
             }>
               {filteredShows.map((show) => (
