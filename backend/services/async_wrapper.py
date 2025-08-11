@@ -197,20 +197,34 @@ class AsyncSubtitleProcessor:
         self,
         video_path: str,
         stream_index: int,
-        output_path: str
+        output_path: str,
+        codec: str = None
     ):
         """Async wrapper for embedded subtitle extraction"""
         
         import ffmpeg
+        from pathlib import Path
         
         async def extract():
             try:
+                # Determine output format based on codec and file extension
+                output_ext = Path(output_path).suffix.lower()
+                
+                # If codec is ASS/SSA and output path has .ass extension, preserve format
+                if codec and codec.lower() in ['ass', 'ssa'] and output_ext == '.ass':
+                    output_format = 'ass'
+                elif codec and codec.lower() in ['ass', 'ssa'] and output_ext == '.ssa':
+                    output_format = 'ssa'
+                else:
+                    # Default to SRT for compatibility
+                    output_format = 'srt'
+                
                 # Build ffmpeg command
                 input_stream = ffmpeg.input(video_path)
                 output = ffmpeg.output(
                     input_stream,
                     output_path,
-                    **{'map': f'0:{stream_index}', 'f': 'srt'}
+                    **{'map': f'0:{stream_index}', 'f': output_format}
                 )
                 
                 # Run in thread pool

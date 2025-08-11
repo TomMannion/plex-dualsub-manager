@@ -14,7 +14,10 @@ import type {
 } from '../types';
 import PlexAuthService from '../services/plexAuth';
 
-const API_BASE = 'http://localhost:8000';
+// Dynamic API base - use current host with backend port
+const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
+  ? 'http://localhost:8000'  
+  : `http://${window.location.hostname}:8000`;
 
 // Create axios instance
 const api = axios.create({

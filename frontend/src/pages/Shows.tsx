@@ -78,7 +78,7 @@ export const Shows: React.FC = () => {
     <div className="min-h-screen">
       {/* ELEGANT HEADER */}
       <section className="py-12 lg:py-16">
-        <div className="px-6 md:px-8 lg:px-12 xl:px-16 2xl:px-24 max-w-[1920px] 2xl:max-w-[2560px] mx-auto">
+        <div className="px-4 md:px-6 lg:px-8 max-w-full mx-auto">
           <div className="text-center mb-12">
             <h1 className="font-serif font-bold text-4xl md:text-5xl lg:text-6xl text-cream-500 mb-6 tracking-tight">
               TV Shows
@@ -96,28 +96,28 @@ export const Shows: React.FC = () => {
             {/* First Row: Search and Library */}
             <div className="grid grid-cols-1 md:grid-cols-12 gap-4 md:gap-6 mb-4">
               {/* Search */}
-              <div className="relative md:col-span-8">
+              <div className="relative md:col-span-9">
                 <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-mist-500" />
                 <input
                   type="text"
                   placeholder="Search your collection..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full bg-charcoal-500 border border-sage-500/30 text-cream-500 rounded-xl pl-12 pr-4 py-4 
+                  className="w-full bg-charcoal-500 border border-gold-500/20 shadow-md shadow-black/10 text-cream-500 rounded-xl pl-12 pr-4 py-4 
                            focus:outline-none focus:ring-2 focus:ring-gold-500/50 focus:border-gold-500/50
-                           placeholder:text-mist-500 font-light transition-all duration-200"
+                           placeholder:text-mist-500 font-light transition-all duration-200 hover:border-gold-500/40"
                 />
               </div>
 
               {/* Library Filter */}
-              <div className="md:col-span-3">
+              <div className="md:col-span-2">
                 {libraries?.libraries && libraries.libraries.length > 1 && (
                   <select
                     value={selectedLibrary}
                     onChange={(e) => setSelectedLibrary(e.target.value)}
-                    className="w-full bg-charcoal-500 border border-sage-500/30 text-cream-500 rounded-xl px-6 md:px-8 py-4
+                    className="w-full bg-charcoal-500 border border-gold-500/20 shadow-lg shadow-black/20 text-cream-500 rounded-xl px-6 md:px-8 py-4
                              focus:outline-none focus:ring-2 focus:ring-gold-500/50 focus:border-gold-500/50
-                             font-light transition-all duration-200"
+                             font-light transition-all duration-200 hover:border-gold-500/40"
                   >
                     <option value="">All Libraries</option>
                     {libraries.libraries.map((library) => (
@@ -131,7 +131,7 @@ export const Shows: React.FC = () => {
 
               {/* View Toggle */}
               <div className="md:col-span-1 flex">
-                <div className="flex bg-charcoal-500 border border-sage-500/30 rounded-xl p-1">
+                <div className="flex bg-charcoal-500 border border-gold-500/20 shadow-lg shadow-black/20 rounded-xl p-1">
                   <button
                     onClick={() => setViewMode('grid')}
                     className={`p-2 rounded-lg transition-all duration-200 ${
@@ -157,20 +157,20 @@ export const Shows: React.FC = () => {
             </div>
 
             {/* Second Row: Language Filter */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
-              <div className="md:col-span-2">
+            <div className="grid grid-cols-1 gap-4 md:gap-6">
+              <div>
                 <LanguageFilter
                   selectedLanguages={selectedLanguages}
                   onLanguagesChange={setSelectedLanguages}
                   maxSelections={2}
                 />
-              </div>
-              <div className="flex items-center text-sm text-mist-500">
                 {selectedLanguages.length > 0 && (
-                  <div className="bg-charcoal-500/50 rounded-xl px-4 py-2 border border-gold-500/20">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 bg-gold-500 rounded-full animate-pulse" />
-                      <span>Shows with {selectedLanguages.map(l => l.name).join(' + ')} subtitles</span>
+                  <div className="mt-4 flex items-center text-sm text-mist-500">
+                    <div className="bg-charcoal-500/50 rounded-xl px-4 py-2 border border-gold-500/20">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 bg-gold-500 rounded-full animate-pulse" />
+                        <span>Shows with {selectedLanguages.map(l => l.name).join(' + ')} subtitles</span>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -180,28 +180,28 @@ export const Shows: React.FC = () => {
 
           {/* SUBTLE STATS */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6 mb-12">
-            <div className="text-center p-4 md:p-6 bg-charcoal-500/50 rounded-xl backdrop-blur-sm border border-sage-500/20">
+            <div className="text-center p-4 md:p-6 bg-charcoal-500/50 rounded-xl backdrop-blur-sm border border-gold-500/20 shadow-lg shadow-black/10">
               <p className="text-xl md:text-2xl font-serif font-bold text-cream-500 mb-1">
                 {showsData?.count || 0}
               </p>
               <p className="text-mist-500 text-sm font-light">Total Shows</p>
             </div>
             
-            <div className="text-center p-4 md:p-6 bg-charcoal-500/50 rounded-xl backdrop-blur-sm border border-sage-500/20">
+            <div className="text-center p-4 md:p-6 bg-charcoal-500/50 rounded-xl backdrop-blur-sm border border-gold-500/20 shadow-lg shadow-black/10">
               <p className="text-xl md:text-2xl font-serif font-bold text-cream-500 mb-1">
                 {filteredShows.length}
               </p>
               <p className="text-mist-500 text-sm font-light">Filtered</p>
             </div>
             
-            <div className="text-center p-4 md:p-6 bg-charcoal-500/50 rounded-xl backdrop-blur-sm border border-sage-500/20">
+            <div className="text-center p-4 md:p-6 bg-charcoal-500/50 rounded-xl backdrop-blur-sm border border-gold-500/20 shadow-lg shadow-black/10">
               <p className="text-xl md:text-2xl font-serif font-bold text-cream-500 mb-1">
                 {libraries?.libraries?.length || 0}
               </p>
               <p className="text-mist-500 text-sm font-light">Libraries</p>
             </div>
             
-            <div className="text-center p-4 md:p-6 bg-charcoal-500/50 rounded-xl backdrop-blur-sm border border-sage-500/20">
+            <div className="text-center p-4 md:p-6 bg-charcoal-500/50 rounded-xl backdrop-blur-sm border border-gold-500/20 shadow-lg shadow-black/10">
               <p className="text-xl md:text-2xl font-serif font-bold text-cream-500 mb-1">
                 {isLoadingCounts ? '...' : totalEpisodes.toLocaleString()}
               </p>
@@ -213,7 +213,7 @@ export const Shows: React.FC = () => {
 
       {/* SHOWS GALLERY */}
       <section className="pb-12">
-        <div className="px-6 md:px-8 lg:px-12 xl:px-16 2xl:px-24 max-w-[1920px] 2xl:max-w-[2560px] mx-auto">
+        <div className="px-4 md:px-6 lg:px-8 max-w-full mx-auto">
           {isLoading ? (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-4 lg:gap-6">
               {Array.from({ length: 12 }).map((_, i) => (
@@ -269,7 +269,7 @@ const ShowCard: React.FC<{
   if (viewMode === 'list') {
     return (
       <Link to={`/shows/${show.id}`} className="group block">
-        <div className="bg-charcoal-500 border border-sage-500/20 rounded-xl p-6 hover:border-gold-500/50 transition-all duration-300 hover:-translate-y-1">
+        <div className="bg-charcoal-500 border border-gold-500/20 shadow-lg shadow-black/20 rounded-xl p-6 hover:border-gold-500/50 transition-all duration-300 hover:-translate-y-1">
           <div className="flex items-center gap-6">
             {/* Thumbnail */}
             <div className="w-16 h-24 bg-slate-500 rounded-lg overflow-hidden flex-shrink-0">
@@ -329,7 +329,7 @@ const ShowCard: React.FC<{
 
   return (
     <Link to={`/shows/${show.id}`} className="group block">
-      <div className="relative overflow-hidden rounded-xl bg-charcoal-500 shadow-lg hover:shadow-2xl transition-all duration-300 hover:-translate-y-2">
+      <div className="relative overflow-hidden rounded-xl bg-charcoal-500 border border-gold-500/15 shadow-lg shadow-black/30 hover:shadow-2xl hover:border-gold-500/30 transition-all duration-300 hover:-translate-y-2">
         {/* Show Thumbnail */}
         <div className="aspect-[2/3] overflow-hidden relative">
           {fixPlexImageUrl(show.thumb) && !imageError ? (

@@ -31,7 +31,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
     <div className="flex flex-col h-screen">
       {/* Elegant Navigation */}
       <header className="bg-charcoal-500/80 border-b border-sage-500/20 backdrop-blur-xl">
-        <div className="px-6 md:px-8 lg:px-12 xl:px-16 2xl:px-24 max-w-[1920px] 2xl:max-w-[2560px] mx-auto py-4 md:py-6">
+        <div className="px-4 md:px-6 lg:px-8 max-w-full mx-auto py-4 md:py-6">
           <div className="flex items-center justify-between">
           {/* Logo & Brand */}
           <div className="flex items-center gap-4 md:gap-8 lg:gap-12 flex-1 min-w-0">

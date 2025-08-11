@@ -389,10 +389,22 @@ class SubtitleService:
         return prefixes.get(lang_code, f'[{lang_code.upper()}] ')
     
     @staticmethod
-    def extract_embedded_subtitle(video_path: str, stream_index: int, output_path: str) -> Dict:
-        """Extract an embedded subtitle stream from video file"""
+    def extract_embedded_subtitle(video_path: str, stream_index: int, output_path: str, codec: str = None) -> Dict:
+        """Extract an embedded subtitle stream from video file, preserving format when possible"""
         try:
-            print(f"Extracting subtitle: video_path={video_path}, stream_index={stream_index}, output_path={output_path}")
+            print(f"Extracting subtitle: video_path={video_path}, stream_index={stream_index}, output_path={output_path}, codec={codec}")
+            
+            # Determine output format based on codec and file extension
+            output_ext = Path(output_path).suffix.lower()
+            
+            # If codec is ASS/SSA and output path has .ass extension, preserve format
+            if codec and codec.lower() in ['ass', 'ssa'] and output_ext == '.ass':
+                output_format = 'ass'
+            elif codec and codec.lower() in ['ass', 'ssa'] and output_ext == '.ssa':
+                output_format = 'ssa'
+            else:
+                # Default to SRT for compatibility
+                output_format = 'srt'
             
             # Use ffmpeg to extract subtitle
             # Use absolute stream index (Plex stream index corresponds to ffmpeg stream index)
@@ -401,7 +413,7 @@ class SubtitleService:
             output = ffmpeg.output(
                 input_stream, 
                 output_path,
-                **{'map': f'0:{stream_index}', 'f': 'srt'}  # Force SRT format for compatibility
+                **{'map': f'0:{stream_index}', 'f': output_format}
             )
             
             # Run with verbose output for debugging

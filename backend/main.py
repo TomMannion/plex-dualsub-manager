@@ -75,20 +75,32 @@ cors_origins = [
     "null"  # Allow file:// origins for testing
 ]
 
-# Also add common local network ranges if needed
-# This covers most home networks
-for port in [3000, 5173, 8080]:
-    cors_origins.extend([
-        f"http://192.168.0.*:{port}",
-        f"http://192.168.1.*:{port}",
-        f"http://10.0.0.*:{port}",
-    ])
-
 print(f"🔒 CORS configured for: {', '.join(cors_origins[:5])}...")
+
+# Custom CORS middleware to allow any local network origin
+def is_local_origin(origin: str) -> bool:
+    """Check if origin is from local network"""
+    if not origin or origin == "null":
+        return True
+    try:
+        # Extract IP from origin
+        if "://" in origin:
+            host_part = origin.split("://")[1].split(":")[0]
+            # Allow localhost, 127.0.0.1, and RFC 1918 private ranges
+            return (
+                host_part in ["localhost", "127.0.0.1"] or
+                host_part.startswith("192.168.") or
+                host_part.startswith("10.") or
+                host_part.startswith("172.16.") or
+                host_part.endswith(".local")
+            )
+    except:
+        pass
+    return origin in cors_origins
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=cors_origins,
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.16\.\d+\.\d+|[^.]+\.local)(:\d+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -690,7 +702,7 @@ async def create_dual_subtitle(
         primary_short = get_short_lang_code(detected_primary)
         secondary_short = get_short_lang_code(detected_secondary)
         
-        output_filename = f"{base_name}.{primary_short}.{secondary_short}.dual{output_ext}"
+        output_filename = f"{base_name}.dual.{primary_short}.{secondary_short}{output_ext}"
         output_path = Path(file_info['file_dir']) / output_filename
         
         # Create configuration
@@ -836,17 +848,31 @@ async def extract_embedded_subtitle(
         if not file_info:
             raise HTTPException(404, "Episode file not found")
         
+        # Find the codec of the embedded subtitle stream
+        codec = None
+        for sub in file_info.get('embedded_subtitles', []):
+            if sub.get('stream_index') == stream_index:
+                codec = sub.get('codec', '')
+                break
+        
+        # Determine file extension based on codec
+        if codec and codec.lower() in ['ass', 'ssa']:
+            file_ext = '.ass'
+        else:
+            file_ext = '.srt'  # Default to SRT for compatibility
+        
         # Create output filename
         base_name = plex_service.get_episode_naming_pattern(episode)
         suffix = ".forced" if subtitle_type == "forced" else ""
-        output_filename = f"{base_name}.{language_code}{suffix}.srt"
+        output_filename = f"{base_name}.{language_code}{suffix}{file_ext}"
         output_path = Path(file_info['file_dir']) / output_filename
         
-        # Extract the embedded subtitle
+        # Extract the embedded subtitle with codec info
         result = subtitle_service.extract_embedded_subtitle(
             file_info['file_path'],
             stream_index,
-            str(output_path)
+            str(output_path),
+            codec
         )
         
         if result['success']:
