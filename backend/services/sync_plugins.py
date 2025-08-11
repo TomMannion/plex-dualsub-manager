@@ -28,6 +28,7 @@ from config import settings
 class SyncMethod(Enum):
     """Available synchronization methods"""
     FFSUBSYNC = "ffsubsync"
+    FAST_ALIGN = "fast_align"  # Fast subtitle-to-subtitle alignment
     MANUAL_OFFSET = "manual_offset"
     AUTO_ALIGN = "auto_align"
     NONE = "none"
@@ -102,8 +103,13 @@ class FFSubSyncPlugin(SyncPlugin):
         max_offset = kwargs.get('max_offset_seconds', settings.subtitle.max_sync_offset_seconds)
         timeout = kwargs.get('timeout', settings.subtitle.sync_timeout_seconds)
         
+        # Optimize timeout for bulk operations
+        bulk_mode = kwargs.get('bulk_mode', False)
+        if bulk_mode:
+            timeout = min(timeout, 90)  # Reduce timeout to 90s for bulk operations
+        
         try:
-            # Build ffsubsync command
+            # Build ffsubsync command with optimizations
             cmd = [
                 'ffsubsync',
                 str(reference_path),
@@ -112,6 +118,18 @@ class FFSubSyncPlugin(SyncPlugin):
                 '--max-offset-seconds', str(max_offset),
                 '--no-fix-framerate'
             ]
+            
+            # Add performance optimizations for bulk operations
+            if bulk_mode:
+                cmd.extend([
+                    '--max-subtitle-seconds', '180',  # Process 3 minutes for speed
+                    '--vad', 'webrtc',  # Use faster VAD method (correct parameter name)
+                ])
+            else:
+                # For individual operations, use more processing time
+                cmd.extend([
+                    '--max-subtitle-seconds', '300',  # Process 5 minutes of dialogue
+                ])
             
             # Run ffsubsync with timeout
             result = subprocess.run(
@@ -234,6 +252,163 @@ class ManualOffsetPlugin(SyncPlugin):
             )
 
 
+class FastAlignPlugin(SyncPlugin):
+    """Fast subtitle-to-subtitle alignment using text similarity and timing patterns"""
+    
+    def get_method(self) -> SyncMethod:
+        return SyncMethod.FAST_ALIGN
+    
+    def is_available(self) -> bool:
+        """Fast align is always available as it's pure Python"""
+        return True
+    
+    def get_description(self) -> str:
+        return "Fast subtitle-to-subtitle alignment using text similarity (optimized for bulk processing)"
+    
+    def sync(self, reference_path: str, target_path: str, output_path: str, **kwargs) -> SyncResult:
+        """
+        Fast alignment using text similarity and timing patterns.
+        Much faster than audio-based sync for similar subtitle files.
+        """
+        
+        try:
+            # Load with encoding detection to handle Chinese/Japanese subtitles
+            import chardet
+            
+            # Detect encoding for reference file
+            with open(reference_path, 'rb') as f:
+                ref_raw = f.read()
+                ref_encoding = chardet.detect(ref_raw)['encoding'] or 'utf-8'
+            
+            # Detect encoding for target file
+            with open(target_path, 'rb') as f:
+                target_raw = f.read()
+                target_encoding = chardet.detect(target_raw)['encoding'] or 'utf-8'
+            
+            # Load with detected encoding
+            try:
+                ref_subs = pysubs2.load(reference_path, encoding=ref_encoding)
+            except:
+                ref_subs = pysubs2.load(reference_path, encoding='utf-8', errors='replace')
+            
+            try:
+                target_subs = pysubs2.load(target_path, encoding=target_encoding)
+            except:
+                target_subs = pysubs2.load(target_path, encoding='utf-8', errors='replace')
+            
+            if not ref_subs or not target_subs:
+                raise SubtitleFormatError(target_path, "Empty subtitle file")
+            
+            # If subtitles have similar length, use enhanced alignment
+            if abs(len(ref_subs) - len(target_subs)) <= max(len(ref_subs), len(target_subs)) * 0.1:
+                offset = self._calculate_best_offset_similarity(ref_subs, target_subs)
+                confidence = 0.85
+            else:
+                # Fallback to simple timing alignment
+                offset = self._calculate_simple_timing_offset(ref_subs, target_subs)
+                confidence = 0.65
+            
+            # Apply offset
+            for line in target_subs:
+                line.start += offset
+                line.end += offset
+                
+                # Ensure no negative timestamps
+                if line.start < 0:
+                    line.start = 0
+                if line.end < 0:
+                    line.end = 0
+            
+            # Save aligned subtitle
+            target_subs.save(output_path)
+            
+            return SyncResult(
+                success=True,
+                method=SyncMethod.FAST_ALIGN,
+                output_path=output_path,
+                offset_ms=offset,
+                confidence=confidence,
+                details={'method': 'text_similarity' if confidence > 0.8 else 'timing_pattern'}
+            )
+            
+        except Exception as e:
+            return SyncResult(
+                success=False,
+                method=SyncMethod.FAST_ALIGN,
+                output_path=output_path,
+                error=f"Fast alignment failed: {str(e)}"
+            )
+    
+    def _calculate_best_offset_similarity(self, ref_subs, target_subs) -> int:
+        """Calculate offset using text similarity between subtitles"""
+        from difflib import SequenceMatcher
+        
+        # Use multiple sample points across the subtitle for better accuracy
+        sample_points = []
+        num_samples = min(10, len(ref_subs), len(target_subs))
+        
+        # Sample from beginning, middle, and end
+        for i in range(num_samples):
+            sample_idx = int((i / (num_samples - 1)) * (len(ref_subs) - 1)) if num_samples > 1 else 0
+            sample_points.append(sample_idx)
+        
+        best_offset = 0
+        best_score = 0
+        
+        # Try different timing offsets (in milliseconds)
+        for offset_ms in range(-5000, 5001, 200):  # Try ±5 seconds in 200ms increments
+            total_score = 0
+            valid_comparisons = 0
+            
+            for ref_idx in sample_points:
+                if ref_idx >= len(ref_subs):
+                    continue
+                    
+                ref_time = ref_subs[ref_idx].start
+                target_time = ref_time - offset_ms  # What the target time should be
+                
+                # Find closest target subtitle to this timing
+                closest_target_idx = min(range(len(target_subs)), 
+                                       key=lambda i: abs(target_subs[i].start - target_time))
+                
+                if closest_target_idx < len(target_subs):
+                    ref_text = ref_subs[ref_idx].text.strip().lower()
+                    target_text = target_subs[closest_target_idx].text.strip().lower()
+                    
+                    if ref_text and target_text:
+                        # Check timing proximity (should be within 2 seconds)
+                        timing_diff = abs(target_subs[closest_target_idx].start - target_time)
+                        if timing_diff < 2000:  # 2 second tolerance
+                            similarity = SequenceMatcher(None, ref_text, target_text).ratio()
+                            # Weight by timing accuracy (closer timing = higher weight)
+                            timing_weight = max(0.1, 1.0 - (timing_diff / 2000))
+                            total_score += similarity * timing_weight
+                            valid_comparisons += 1
+            
+            if valid_comparisons > 0:
+                avg_score = total_score / valid_comparisons
+                if avg_score > best_score:
+                    best_score = avg_score
+                    best_offset = offset_ms
+        
+        return best_offset
+    
+    def _calculate_simple_timing_offset(self, ref_subs, target_subs) -> int:
+        """Simple timing-based offset calculation"""
+        if not ref_subs or not target_subs:
+            return 0
+        
+        # Use first and last subtitle timing differences
+        start_offset = ref_subs[0].start - target_subs[0].start
+        
+        if len(ref_subs) > 1 and len(target_subs) > 1:
+            end_offset = ref_subs[-1].start - target_subs[-1].start
+            # Use average of start and end offsets
+            return (start_offset + end_offset) // 2
+        
+        return start_offset
+
+
 class AutoAlignPlugin(SyncPlugin):
     """Plugin for automatic alignment based on subtitle overlap analysis"""
     
@@ -254,8 +429,25 @@ class AutoAlignPlugin(SyncPlugin):
         """
         
         try:
-            ref_subs = pysubs2.load(reference_path)
-            target_subs = pysubs2.load(target_path)
+            # Load with encoding detection
+            import chardet
+            
+            # Detect encoding for files
+            with open(reference_path, 'rb') as f:
+                ref_encoding = chardet.detect(f.read())['encoding'] or 'utf-8'
+            with open(target_path, 'rb') as f:
+                target_encoding = chardet.detect(f.read())['encoding'] or 'utf-8'
+            
+            # Load with detected encoding
+            try:
+                ref_subs = pysubs2.load(reference_path, encoding=ref_encoding)
+            except:
+                ref_subs = pysubs2.load(reference_path, encoding='utf-8', errors='replace')
+            
+            try:
+                target_subs = pysubs2.load(target_path, encoding=target_encoding)
+            except:
+                target_subs = pysubs2.load(target_path, encoding='utf-8', errors='replace')
             
             if not ref_subs or not target_subs:
                 raise SubtitleFormatError(target_path, "Empty subtitle file")
@@ -330,6 +522,7 @@ class SubtitleSynchronizer:
     def __init__(self):
         self.plugins: List[SyncPlugin] = [
             FFSubSyncPlugin(),
+            FastAlignPlugin(),  # Add fast align as priority fallback
             AutoAlignPlugin(),
             ManualOffsetPlugin()
         ]
@@ -389,8 +582,8 @@ class SubtitleSynchronizer:
                     fallback_available=len(self.available_methods) > 0
                 )
         else:
-            # Try methods in order of preference
-            preferred_order = [SyncMethod.FFSUBSYNC, SyncMethod.AUTO_ALIGN, SyncMethod.MANUAL_OFFSET]
+            # Try methods in order of preference - fast_align as primary fallback for bulk operations
+            preferred_order = [SyncMethod.FFSUBSYNC, SyncMethod.FAST_ALIGN, SyncMethod.AUTO_ALIGN, SyncMethod.MANUAL_OFFSET]
             methods_to_try = [m for m in preferred_order if m in self.available_methods]
         
         if not methods_to_try:

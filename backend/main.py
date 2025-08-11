@@ -19,6 +19,7 @@ sys.path.append(str(Path(__file__).parent))
 
 from services.plex_service import plex_service
 from services.subtitle_service import subtitle_service, DualSubtitleConfig, SubtitlePosition
+from routes import jobs
 
 # Simple in-memory cache for show counts
 show_counts_cache: Dict[str, Dict[str, Any]] = {}
@@ -105,6 +106,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include job management routes
+app.include_router(jobs.router)
 
 @app.get("/")
 async def root():

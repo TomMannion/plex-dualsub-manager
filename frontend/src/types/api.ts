@@ -55,6 +55,8 @@ export interface ExternalSubtitle {
   file_name: string;
   language_code?: string;
   format: string;
+  is_dual_subtitle?: boolean;
+  dual_languages?: string[];
 }
 
 export interface Episode {

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Film, Subtitles, ArrowRight, Wifi, WifiOff } from 'lucide-react';
@@ -6,9 +6,12 @@ import { apiClient } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import { fixPlexImageUrl } from '../utils/imageUtils';
 import { DashboardStats } from '../components/DashboardStats';
+import { JobStatusWidget } from '../components/jobs/JobStatusWidget';
+import { JobDetailModal } from '../components/jobs/JobDetailModal';
 
 export const Dashboard: React.FC = () => {
   const { user } = useAuth();
+  const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   
   // Fetch basic stats
   const { data: libraries } = useQuery({
@@ -74,7 +77,16 @@ export const Dashboard: React.FC = () => {
         </div>
       </section>
 
-      {/* 2. FEATURED CONTENT GALLERY */}
+      {/* 2. BACKGROUND JOBS STATUS */}
+      <section className="py-8 px-4 md:px-6 lg:px-8 max-w-full mx-auto">
+        <div className="max-w-4xl mx-auto">
+          <JobStatusWidget 
+            onViewJobDetails={setSelectedJobId}
+          />
+        </div>
+      </section>
+
+      {/* 3. FEATURED CONTENT GALLERY */}
       {recentShowsData?.shows && recentShowsData.shows.length > 0 && (
         <section className="py-12 px-4 md:px-6 lg:px-8 max-w-full mx-auto">
           <div>
@@ -143,7 +155,7 @@ export const Dashboard: React.FC = () => {
         </section>
       )}
 
-      {/* 3. PRIMARY ACTIONS */}
+      {/* 4. PRIMARY ACTIONS */}
       <section className="py-12 px-4 md:px-6 lg:px-8 max-w-full mx-auto">
         <div>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -198,15 +210,27 @@ export const Dashboard: React.FC = () => {
         </div>
       </section>
 
-      {/* 4. SUBTLE STATISTICS */}
+      {/* 5. STATISTICS */}
       <section className="py-12 px-4 md:px-6 lg:px-8 max-w-full mx-auto">
-        <div>
+        <div className="max-w-6xl mx-auto">
           <DashboardStats 
             libraries={libraries}
             showsData={showsData}
           />
         </div>
       </section>
+
+      {/* Job Detail Modal */}
+      {selectedJobId && (
+        <JobDetailModal
+          jobId={selectedJobId}
+          onClose={() => setSelectedJobId(null)}
+          onJobComplete={() => {
+            // Optionally show a notification or refresh data
+            console.log('Job completed!');
+          }}
+        />
+      )}
     </div>
   );
 };

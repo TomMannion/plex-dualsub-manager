@@ -30,7 +30,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
   return (
     <div className="flex flex-col h-screen">
       {/* Elegant Navigation */}
-      <header className="bg-charcoal-500/80 border-b border-sage-500/20 backdrop-blur-xl">
+      <header className="bg-charcoal-500/80 border-b border-sage-500/20 backdrop-blur-xl relative z-50">
         <div className="px-4 md:px-6 lg:px-8 max-w-full mx-auto py-4 md:py-6">
           <div className="flex items-center justify-between">
           {/* Logo & Brand */}

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useMutation } from '@tanstack/react-query';
-import { Palette, Maximize2, Eye, Loader, Check, AlertCircle, X } from 'lucide-react';
+import { Palette, Eye, Loader, Check, AlertCircle, X } from 'lucide-react';
 import { apiClient } from '../lib/api';
 import type { ExternalSubtitle, DualSubtitleConfig } from '../types';
 

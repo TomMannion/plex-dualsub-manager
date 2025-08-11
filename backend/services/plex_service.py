@@ -206,21 +206,89 @@ class PlexService:
                     # Check if this subtitle belongs to our video
                     if file.stem.startswith(base_filename):
                         # Extract language code if present
-                        # Format: ShowName.S01E01.en.srt or ShowName.S01E01.srt
+                        # Format: ShowName.S01E01.en.srt, ShowName.S01E01.zh.hi.srt, or ShowName.S01E01.srt
                         parts = file.stem.split('.')
                         language_code = None
                         
                         # Try to find language code (usually 2-3 letters after episode number)
+                        # Look through parts to find a valid language code, prioritizing known codes
+                        known_language_codes = {
+                            'en', 'eng', 'ja', 'jpn', 'es', 'spa', 'fr', 'fra', 'de', 'ger', 'deu',
+                            'it', 'ita', 'pt', 'por', 'ru', 'rus', 'ko', 'kor', 'zh', 'zho', 'chi',
+                            'ar', 'ara', 'nl', 'dut', 'sv', 'swe', 'no', 'nor', 'da', 'dan',
+                            'fi', 'fin', 'pl', 'pol', 'tr', 'tur', 'th', 'tha', 'vi', 'vie'
+                        }
+                        
+                        # Chinese variant detection patterns
+                        chinese_variants = {
+                            'zh-tw': 'zh-TW',    # Traditional Chinese (Taiwan)
+                            'zh-hk': 'zh-HK',    # Traditional Chinese (Hong Kong) 
+                            'zh-cn': 'zh-CN',    # Simplified Chinese (China)
+                            'zh-sg': 'zh-SG',    # Simplified Chinese (Singapore)
+                            'zht': 'zh-TW',      # Traditional Chinese shorthand
+                            'zhs': 'zh-CN',      # Simplified Chinese shorthand
+                            'cht': 'zh-TW',      # Traditional Chinese alternative
+                            'chs': 'zh-CN'       # Simplified Chinese alternative
+                        }
+                        
                         if len(parts) > 1:
-                            possible_lang = parts[-1]
-                            if len(possible_lang) in [2, 3] and possible_lang.isalpha():
-                                language_code = possible_lang.lower()
+                            # First check for Chinese variants (more specific)
+                            for i in range(len(parts) - 1):
+                                # Check for patterns like "zh-TW", "zh.TW", or combined "zh-tw"
+                                current_part = parts[i].lower()
+                                next_part = parts[i + 1].lower() if i + 1 < len(parts) else ""
+                                
+                                # Pattern: "zh-tw", "zht", etc.
+                                if current_part in chinese_variants:
+                                    language_code = chinese_variants[current_part]
+                                    break
+                                # Pattern: "zh" + "tw" as separate parts
+                                elif current_part == 'zh' and next_part in ['tw', 'hk', 'cn', 'sg']:
+                                    language_code = f'zh-{next_part.upper()}'
+                                    break
+                            
+                            # If no Chinese variant found, look for standard language codes
+                            if not language_code:
+                                for part in reversed(parts[1:]):  # Skip the base filename part
+                                    if len(part) in [2, 3] and part.lower() in known_language_codes:
+                                        language_code = part.lower()
+                                        break
+                            
+                            # If no known language code found, fall back to the old logic
+                            if not language_code:
+                                possible_lang = parts[-1]
+                                if (len(possible_lang) in [2, 3] and 
+                                    possible_lang.isalpha() and 
+                                    possible_lang.lower() not in ['hi', 'cc', 'sdh', 'forced']):  # Exclude subtitle variant indicators
+                                    language_code = possible_lang.lower()
+                        
+                        # Check if this is a dual subtitle file
+                        is_dual_subtitle = '.dual.' in file.stem.lower()
+                        dual_languages = None
+                        
+                        if is_dual_subtitle:
+                            # Extract language codes from dual subtitle: base.dual.lang1.lang2.ext
+                            dual_parts = file.stem.split('.')
+                            if len(dual_parts) >= 4:
+                                # Find the .dual. part and extract languages after it
+                                try:
+                                    dual_index = [p.lower() for p in dual_parts].index('dual')
+                                    if dual_index + 2 < len(dual_parts):
+                                        lang1 = dual_parts[dual_index + 1]
+                                        lang2 = dual_parts[dual_index + 2]
+                                        dual_languages = [lang1, lang2]
+                                        # For dual subtitles, we don't set a single language_code
+                                        language_code = None
+                                except (ValueError, IndexError):
+                                    pass
                         
                         external_subs.append({
                             'file_path': str(file),
                             'file_name': file.name,
                             'language_code': language_code,
-                            'format': file.suffix[1:].upper()
+                            'format': file.suffix[1:].upper(),
+                            'is_dual_subtitle': is_dual_subtitle,
+                            'dual_languages': dual_languages
                         })
         except Exception as e:
             print(f"Error scanning for subtitles: {e}")

@@ -499,6 +499,122 @@ class SubtitleService:
             return {'valid': False, 'error': str(e)}
     
     @staticmethod
+    def sync_subtitles_hybrid(video_path: str, subtitle1_path: str, subtitle2_path: str, 
+                              output1_path: str, output2_path: str, **kwargs) -> Dict:
+        """
+        Hybrid sync: Primary subtitle to video, then secondary subtitle to synced primary.
+        This is much faster as subtitle-to-subtitle sync takes < 1 second.
+        """
+        
+        # Use the new plugin system with bulk mode optimizations
+        from .sync_plugins import SubtitleSynchronizer
+        
+        synchronizer = SubtitleSynchronizer()
+        
+        try:
+            print(f"Step 1: Syncing primary subtitle to video...")
+            
+            # First sync PRIMARY subtitle to video (this ensures correct timing)
+            bulk_kwargs = {**kwargs, 'bulk_mode': True}
+            
+            result1 = synchronizer.sync_subtitles(
+                reference_path=video_path,
+                target_path=subtitle1_path,
+                output_path=output1_path,
+                **bulk_kwargs
+            )
+            
+            if not result1.success:
+                print(f"Primary sync failed: {result1.error}, trying fallback")
+                # If primary fails, try original method for both
+                result1_fallback = SubtitleService.sync_subtitles_with_ffsubsync(video_path, subtitle1_path, output1_path)
+                result2_fallback = SubtitleService.sync_subtitles_with_ffsubsync(video_path, subtitle2_path, output2_path)
+                return {
+                    'success': result1_fallback['success'] and result2_fallback['success'],
+                    'primary_result': result1_fallback,
+                    'secondary_result': result2_fallback,
+                    'method': 'ffsubsync-fallback-primary-failed'
+                }
+            
+            print(f"Primary subtitle synced successfully!")
+            print(f"Step 2: Syncing secondary subtitle to synced primary (fast)...")
+            
+            # Now sync SECONDARY subtitle to the already-synced PRIMARY
+            # This is MUCH faster (< 1 second) since no audio extraction needed
+            result2 = synchronizer.sync_subtitles(
+                reference_path=output1_path,  # Use synced primary as reference!
+                target_path=subtitle2_path,
+                output_path=output2_path,
+                **bulk_kwargs
+            )
+            
+            if result2.success:
+                print(f"Secondary subtitle synced successfully (subtitle-to-subtitle)!")
+                
+                # Fine-tune alignment: Ensure both subtitles start at the same baseline
+                try:
+                    primary_subs = pysubs2.load(output1_path)
+                    secondary_subs = pysubs2.load(output2_path)
+                    
+                    if primary_subs and secondary_subs and len(primary_subs) > 0 and len(secondary_subs) > 0:
+                        # Calculate timing difference at the start
+                        timing_diff = primary_subs[0].start - secondary_subs[0].start
+                        
+                        # Only adjust if there's a noticeable difference (> 50ms)
+                        if abs(timing_diff) > 50:
+                            print(f"Fine-tuning secondary timing by {timing_diff}ms")
+                            # Adjust all secondary subtitle timings
+                            for line in secondary_subs:
+                                line.start += timing_diff
+                                line.end += timing_diff
+                                # Ensure no negative timings
+                                if line.start < 0:
+                                    line.start = 0
+                                if line.end < 0:
+                                    line.end = 0
+                            # Save the adjusted subtitle
+                            secondary_subs.save(output2_path)
+                except Exception as tune_error:
+                    print(f"Fine-tuning failed (non-critical): {tune_error}")
+                    
+            else:
+                print(f"Secondary subtitle-to-subtitle sync failed, trying video sync")
+                # Fallback: sync secondary to video if subtitle-to-subtitle fails
+                result2 = synchronizer.sync_subtitles(
+                    reference_path=video_path,
+                    target_path=subtitle2_path,
+                    output_path=output2_path,
+                    **bulk_kwargs
+                )
+            
+            return {
+                'success': result1.success and result2.success,
+                'primary_result': {
+                    'success': result1.success,
+                    'method': result1.method.value if result1.method else 'unknown',
+                    'error': result1.error
+                },
+                'secondary_result': {
+                    'success': result2.success,
+                    'method': result2.method.value if result2.method else 'unknown', 
+                    'error': result2.error
+                },
+                'method': 'hybrid-primary-to-video-secondary-to-primary'
+            }
+            
+        except Exception as e:
+            print(f"Hybrid sync failed: {e}")
+            # Fallback to original method
+            result1 = SubtitleService.sync_subtitles_with_ffsubsync(video_path, subtitle1_path, output1_path)
+            result2 = SubtitleService.sync_subtitles_with_ffsubsync(video_path, subtitle2_path, output2_path)
+            return {
+                'success': result1['success'] and result2['success'],
+                'primary_result': result1,
+                'secondary_result': result2,
+                'method': 'ffsubsync-fallback-error'
+            }
+
+    @staticmethod
     def sync_subtitles_with_ffsubsync(reference_path: str, target_path: str, output_path: str) -> Dict:
         """Synchronize target subtitle file to reference using ffsubsync"""
         try:
@@ -718,48 +834,51 @@ class SubtitleService:
             try:
                 sync_report['attempted'] = True
                 
-                # Sync PRIMARY subtitle to video first
-                with tempfile.NamedTemporaryFile(suffix='.srt', delete=False) as tmp_file:
-                    temp_primary_sync_path = tmp_file.name
+                # Create temporary files for both synced subtitles
+                with tempfile.NamedTemporaryFile(suffix='.srt', delete=False) as tmp1:
+                    temp_primary_sync_path = tmp1.name
+                with tempfile.NamedTemporaryFile(suffix='.srt', delete=False) as tmp2:
+                    temp_secondary_sync_path = tmp2.name
                 
-                primary_sync_result = SubtitleService.sync_subtitles_with_ffsubsync(
-                    video_path, primary_path, temp_primary_sync_path
+                # Use hybrid sync: primary to video, secondary to primary
+                cached_sync_result = SubtitleService.sync_subtitles_hybrid(
+                    video_path, primary_path, secondary_path, 
+                    temp_primary_sync_path, temp_secondary_sync_path
                 )
                 
-                if primary_sync_result['success']:
-                    actual_primary_path = temp_primary_sync_path
-                    sync_report['primary_synced'] = True
-                    print(f"Primary subtitle synced to video")
+                if cached_sync_result['success']:
+                    # Check individual results
+                    if cached_sync_result['primary_result']['success']:
+                        actual_primary_path = temp_primary_sync_path
+                        sync_report['primary_synced'] = True
+                        print(f"Primary subtitle synced to video")
+                    else:
+                        print(f"Primary sync failed: {cached_sync_result['primary_result']['error']}")
+                        try:
+                            Path(temp_primary_sync_path).unlink()
+                        except:
+                            pass
+                    
+                    if cached_sync_result['secondary_result']['success']:
+                        actual_secondary_path = temp_secondary_sync_path
+                        sync_report['secondary_synced'] = True
+                        print(f"Secondary subtitle synced to video")
+                    else:
+                        print(f"Secondary sync failed: {cached_sync_result['secondary_result']['error']}")
+                        try:
+                            Path(temp_secondary_sync_path).unlink()
+                        except:
+                            pass
                 else:
-                    print(f"Primary sync failed: {primary_sync_result['error']}")
-                    # Clean up temp file if sync failed
+                    print(f"Cached sync failed, cleaning up temp files")
                     try:
                         Path(temp_primary_sync_path).unlink()
-                    except:
-                        pass
-                
-                # Sync SECONDARY subtitle to video
-                with tempfile.NamedTemporaryFile(suffix='.srt', delete=False) as tmp_file:
-                    temp_secondary_sync_path = tmp_file.name
-                
-                secondary_sync_result = SubtitleService.sync_subtitles_with_ffsubsync(
-                    video_path, secondary_path, temp_secondary_sync_path
-                )
-                
-                if secondary_sync_result['success']:
-                    actual_secondary_path = temp_secondary_sync_path
-                    sync_report['secondary_synced'] = True
-                    print(f"Secondary subtitle synced to video")
-                else:
-                    print(f"Secondary sync failed: {secondary_sync_result['error']}")
-                    # Clean up temp file if sync failed
-                    try:
                         Path(temp_secondary_sync_path).unlink()
                     except:
                         pass
                 
                 sync_report['successful'] = sync_report['primary_synced'] or sync_report['secondary_synced']
-                sync_report['method'] = 'ffsubsync-to-video'
+                sync_report['method'] = cached_sync_result['method']
                     
             except Exception as e:
                 sync_report['error'] = str(e)
@@ -891,48 +1010,51 @@ class SubtitleService:
             try:
                 sync_report['attempted'] = True
                 
-                # Sync PRIMARY subtitle to video first
-                with tempfile.NamedTemporaryFile(suffix='.srt', delete=False) as tmp_file:
-                    temp_primary_sync_path = tmp_file.name
+                # Create temporary files for both synced subtitles
+                with tempfile.NamedTemporaryFile(suffix='.srt', delete=False) as tmp1:
+                    temp_primary_sync_path = tmp1.name
+                with tempfile.NamedTemporaryFile(suffix='.srt', delete=False) as tmp2:
+                    temp_secondary_sync_path = tmp2.name
                 
-                primary_sync_result = SubtitleService.sync_subtitles_with_ffsubsync(
-                    video_path, primary_path, temp_primary_sync_path
+                # Use hybrid sync: primary to video, secondary to primary
+                cached_sync_result = SubtitleService.sync_subtitles_hybrid(
+                    video_path, primary_path, secondary_path, 
+                    temp_primary_sync_path, temp_secondary_sync_path
                 )
                 
-                if primary_sync_result['success']:
-                    actual_primary_path = temp_primary_sync_path
-                    sync_report['primary_synced'] = True
-                    print(f"Primary subtitle synced to video")
+                if cached_sync_result['success']:
+                    # Check individual results
+                    if cached_sync_result['primary_result']['success']:
+                        actual_primary_path = temp_primary_sync_path
+                        sync_report['primary_synced'] = True
+                        print(f"Primary subtitle synced to video")
+                    else:
+                        print(f"Primary sync failed: {cached_sync_result['primary_result']['error']}")
+                        try:
+                            Path(temp_primary_sync_path).unlink()
+                        except:
+                            pass
+                    
+                    if cached_sync_result['secondary_result']['success']:
+                        actual_secondary_path = temp_secondary_sync_path
+                        sync_report['secondary_synced'] = True
+                        print(f"Secondary subtitle synced to video")
+                    else:
+                        print(f"Secondary sync failed: {cached_sync_result['secondary_result']['error']}")
+                        try:
+                            Path(temp_secondary_sync_path).unlink()
+                        except:
+                            pass
                 else:
-                    print(f"Primary sync failed: {primary_sync_result['error']}")
-                    # Clean up temp file if sync failed
+                    print(f"Cached sync failed, cleaning up temp files")
                     try:
                         Path(temp_primary_sync_path).unlink()
-                    except:
-                        pass
-                
-                # Sync SECONDARY subtitle to video
-                with tempfile.NamedTemporaryFile(suffix='.srt', delete=False) as tmp_file:
-                    temp_secondary_sync_path = tmp_file.name
-                
-                secondary_sync_result = SubtitleService.sync_subtitles_with_ffsubsync(
-                    video_path, secondary_path, temp_secondary_sync_path
-                )
-                
-                if secondary_sync_result['success']:
-                    actual_secondary_path = temp_secondary_sync_path
-                    sync_report['secondary_synced'] = True
-                    print(f"Secondary subtitle synced to video")
-                else:
-                    print(f"Secondary sync failed: {secondary_sync_result['error']}")
-                    # Clean up temp file if sync failed
-                    try:
                         Path(temp_secondary_sync_path).unlink()
                     except:
                         pass
                 
                 sync_report['successful'] = sync_report['primary_synced'] or sync_report['secondary_synced']
-                sync_report['method'] = 'ffsubsync-to-video'
+                sync_report['method'] = cached_sync_result['method']
                     
             except Exception as e:
                 sync_report['error'] = str(e)
@@ -1181,6 +1303,228 @@ class SubtitleService:
                 'output_format': config.output_format.value
             }
         }
+
+    @staticmethod
+    def process_bulk_dual_subtitles_job(
+        job_id: str,
+        progress_callback,
+        show_id: str,
+        show_title: str,
+        primary_language: str,
+        secondary_language: str,
+        styling_config: dict,
+        episode_configs: dict = None,
+        **kwargs
+    ):
+        """
+        Background job function for bulk dual subtitle processing
+        """
+        from .plex_service import plex_service
+        import time
+        from pathlib import Path
+        
+        # Initialize progress
+        progress_callback({
+            'current_step': 'Initializing',
+            'current_item': 'Loading show data',
+            'processed': 0,
+            'total': 0,
+            'details': {'show_title': show_title}
+        })
+        
+        # Get Plex token from job metadata (passed through kwargs)
+        token = kwargs.get('token') or kwargs.get('plex_token')
+        print(f"DEBUG: Job processing with token: {token[:20] if token else 'None'}...")
+        print(f"DEBUG: Available kwargs: {list(kwargs.keys())}")
+        
+        if not token:
+            raise Exception("No Plex authentication token provided")
+        
+        try:
+            # Get show episodes
+            show = plex_service.get_show(show_id, token)
+            episodes = show.episodes()
+            
+            progress_callback({
+                'current_step': 'Analyzing episodes',
+                'current_item': f'Found {len(episodes)} episodes',
+                'processed': 0,
+                'total': len(episodes)
+            })
+            
+            # Find episodes that have both required languages
+            valid_episodes = []
+            for episode in episodes:
+                try:
+                    episode_subtitles = plex_service.get_episode_file_info(episode)
+                    if episode_subtitles and episode_subtitles.get('external_subtitles'):
+                        available_langs = [sub.get('language_code') for sub in episode_subtitles['external_subtitles']]
+                        if primary_language in available_langs and secondary_language in available_langs:
+                            valid_episodes.append(episode)
+                except Exception as e:
+                    print(f"Error checking episode {episode.title}: {e}")
+                    continue
+            
+            total_episodes = len(valid_episodes)
+            progress_callback({
+                'current_step': 'Processing episodes',
+                'current_item': f'{total_episodes} episodes eligible for processing',
+                'processed': 0,
+                'total': total_episodes
+            })
+            
+            results = {
+                'successful': [],
+                'failed': [],
+                'skipped': []
+            }
+            
+            episode_times = []
+            start_time = time.time()
+            
+            for i, episode in enumerate(valid_episodes):
+                # Check for cancellation
+                from .job_queue import job_queue
+                if job_queue.is_job_cancelled(job_id):
+                    print(f"Job {job_id} was cancelled, stopping processing")
+                    job_queue.mark_job_cancelled(job_id)
+                    raise Exception("Job was cancelled by user")
+                
+                episode_start_time = time.time()
+                
+                # Calculate time estimates
+                if episode_times:
+                    avg_time = sum(episode_times) / len(episode_times)
+                    remaining = total_episodes - i
+                    estimated_remaining = remaining * avg_time
+                    
+                    # Format time
+                    if estimated_remaining > 60:
+                        time_str = f"{int(estimated_remaining // 60)}m {int(estimated_remaining % 60)}s"
+                    else:
+                        time_str = f"{int(estimated_remaining)}s"
+                else:
+                    time_str = "Calculating..."
+                    avg_time = 45
+                
+                progress_callback({
+                    'current_step': 'Creating dual subtitles',
+                    'current_item': f"S{episode.parentIndex:02d}E{episode.index:02d}: {episode.title}",
+                    'processed': i,
+                    'total': total_episodes,
+                    'estimated_time_remaining': time_str,
+                    'details': {
+                        'average_time_per_episode': f"{int(avg_time)}s",
+                        'current_episode': f"S{episode.parentIndex:02d}E{episode.index:02d}"
+                    }
+                })
+                
+                try:
+                    # Get episode subtitle info
+                    episode_subtitles = plex_service.get_episode_file_info(episode)
+                    
+                    # Find primary and secondary subtitle files
+                    primary_sub = None
+                    secondary_sub = None
+                    
+                    for sub in episode_subtitles['external_subtitles']:
+                        if sub['language_code'] == primary_language and not primary_sub:
+                            primary_sub = sub
+                        elif sub['language_code'] == secondary_language and not secondary_sub:
+                            secondary_sub = sub
+                    
+                    if not primary_sub or not secondary_sub:
+                        results['skipped'].append({
+                            'episode_id': episode.ratingKey,
+                            'episode_title': episode.title,
+                            'reason': 'Missing required subtitle files'
+                        })
+                        continue
+                    
+                    # Create dual subtitle configuration
+                    config = DualSubtitleConfig(
+                        primary_position=SubtitlePosition.BOTTOM if styling_config.get('primary_position') == 'bottom' else SubtitlePosition.TOP,
+                        secondary_position=SubtitlePosition.BOTTOM if styling_config.get('secondary_position') == 'bottom' else SubtitlePosition.TOP,
+                        primary_color=SubtitleService.convert_color_to_ass(styling_config.get('primary_color', '#FFFFFF')),
+                        secondary_color=SubtitleService.convert_color_to_ass(styling_config.get('secondary_color', '#FFFF00')),
+                        primary_font_size=styling_config.get('primary_font_size', 20),
+                        secondary_font_size=styling_config.get('secondary_font_size', 18)
+                    )
+                    
+                    # Get output path
+                    base_name = plex_service.get_episode_naming_pattern(episode)
+                    output_format = styling_config.get('output_format', 'ass')
+                    output_ext = '.ass' if output_format == 'ass' else '.srt'
+                    output_filename = f"{base_name}.dual.{primary_language}.{secondary_language}{output_ext}"
+                    output_path = Path(episode_subtitles['file_dir']) / output_filename
+                    
+                    # Create dual subtitle with sync
+                    result = SubtitleService.create_dual_subtitle(
+                        primary_sub['file_path'],
+                        secondary_sub['file_path'], 
+                        str(output_path),
+                        config,
+                        video_path=episode_subtitles['file_path'],
+                        declared_primary_lang=primary_language,
+                        declared_secondary_lang=secondary_language,
+                        enable_language_detection=True,
+                        enable_sync=True  # Enable sync with optimizations
+                    )
+                    
+                    if result['success']:
+                        results['successful'].append({
+                            'episode_id': episode.ratingKey,
+                            'episode_title': episode.title,
+                            'output_file': output_filename,
+                            'output_path': str(output_path)
+                        })
+                    else:
+                        results['failed'].append({
+                            'episode_id': episode.ratingKey,
+                            'episode_title': episode.title,
+                            'error': result.get('error', 'Unknown error')
+                        })
+                    
+                    # Track timing
+                    episode_end_time = time.time()
+                    episode_duration = episode_end_time - episode_start_time
+                    episode_times.append(episode_duration)
+                    
+                    # Keep only last 10 timings for better estimate
+                    if len(episode_times) > 10:
+                        episode_times = episode_times[-10:]
+                
+                except Exception as e:
+                    results['failed'].append({
+                        'episode_id': episode.ratingKey,
+                        'episode_title': episode.title,
+                        'error': str(e)
+                    })
+            
+            # Final progress update
+            progress_callback({
+                'current_step': 'Completed',
+                'current_item': f'Processed {total_episodes} episodes',
+                'processed': total_episodes,
+                'total': total_episodes,
+                'estimated_time_remaining': '0s',
+                'details': {
+                    'successful': len(results['successful']),
+                    'failed': len(results['failed']),
+                    'skipped': len(results['skipped'])
+                }
+            })
+            
+            return results
+            
+        except Exception as e:
+            progress_callback({
+                'current_step': 'Failed',
+                'current_item': str(e),
+                'processed': 0,
+                'total': 0
+            })
+            raise e
 
 # Singleton instance
 subtitle_service = SubtitleService()
