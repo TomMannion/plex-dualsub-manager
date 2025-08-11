@@ -34,6 +34,7 @@ export const BulkDualSubtitleWizard: React.FC<BulkDualSubtitleWizardProps> = ({
     primary_language: '',
     secondary_language: '',
     output_format: 'ass',
+    secondary_timing_offset: -200, // Default to -200ms to compensate for common lag
   });
   const [episodeConfigs, setEpisodeConfigs] = useState<Map<string, EpisodeConfig>>(new Map());
   const [jobId, setJobId] = useState<string>('');

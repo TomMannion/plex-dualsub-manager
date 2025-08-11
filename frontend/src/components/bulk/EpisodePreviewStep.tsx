@@ -343,6 +343,42 @@ export const EpisodePreviewStep: React.FC<EpisodePreviewStepProps> = ({
                   </div>
                 </div>
 
+                {/* Timing Adjustment */}
+                <div className="col-span-1 md:col-span-2 border-t border-sage-500/20 pt-6">
+                  <h6 className="font-semibold text-cream-500 mb-4">Timing Adjustment</h6>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <label className="block text-sm font-medium text-cream-500 mb-2">
+                        Secondary Timing Offset: {stylingConfig.secondary_timing_offset || 0}ms
+                      </label>
+                      <input
+                        type="range"
+                        min="-1000"
+                        max="1000"
+                        step="50"
+                        value={stylingConfig.secondary_timing_offset || 0}
+                        onChange={(e) => onStylingConfigChange({ ...stylingConfig, secondary_timing_offset: parseInt(e.target.value) })}
+                        className="w-full h-2 bg-slate-500 rounded-lg appearance-none cursor-pointer slider"
+                      />
+                      <div className="flex justify-between text-xs text-mist-500 mt-1">
+                        <span>-1s (advance)</span>
+                        <span>0ms</span>
+                        <span>+1s (delay)</span>
+                      </div>
+                    </div>
+                    <div className="text-sm text-mist-500 space-y-2">
+                      <p>
+                        <strong className="text-cream-500">Fine-tune subtitle timing:</strong>
+                      </p>
+                      <ul className="space-y-1 text-xs">
+                        <li>• <strong>Negative values</strong>: Advance secondary subtitles (appear earlier)</li>
+                        <li>• <strong>Positive values</strong>: Delay secondary subtitles (appear later)</li>
+                        <li>• <strong>Default (-200ms)</strong>: Compensates for common sync lag</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+
                 {/* Live Preview */}
                 <div>
                   <h6 className="font-semibold text-cream-500 mb-3">Live Preview</h6>

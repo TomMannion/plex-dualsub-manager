@@ -103,6 +103,7 @@ export interface DualSubtitleConfig {
   primary_language: string;
   secondary_language: string;
   output_format: 'ass' | 'srt';
+  secondary_timing_offset?: number; // Milliseconds to adjust secondary subtitle timing
 }
 
 export interface DualSubtitleResult {

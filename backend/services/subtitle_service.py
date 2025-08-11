@@ -551,6 +551,34 @@ class SubtitleService:
             if result2.success:
                 print(f"Secondary subtitle synced successfully (subtitle-to-subtitle)!")
                 
+                # Apply user-configurable timing adjustment to fix sync offset issues
+                timing_offset = kwargs.get('secondary_timing_offset', -200)  # Default to -200ms
+                
+                if timing_offset != 0:
+                    try:
+                        with tempfile.NamedTemporaryFile(suffix='.srt', delete=False) as tmp_adjusted:
+                            temp_adjusted_path = tmp_adjusted.name
+                        
+                        adjust_result = SubtitleService.adjust_subtitle_timing(
+                            output2_path, timing_offset, temp_adjusted_path
+                        )
+                        
+                        if adjust_result['success']:
+                            # Replace the original with the adjusted version
+                            import shutil
+                            shutil.move(temp_adjusted_path, output2_path)
+                            print(f"Applied {timing_offset}ms timing adjustment to secondary subtitle")
+                        else:
+                            # Clean up temp file if adjustment failed
+                            try:
+                                os.unlink(temp_adjusted_path)
+                            except:
+                                pass
+                            
+                    except Exception as e:
+                        print(f"Warning: Could not apply timing adjustment: {e}")
+                        # Continue without adjustment - not critical
+                
                 # Fine-tune alignment: Ensure both subtitles start at the same baseline
                 try:
                     primary_subs = pysubs2.load(output1_path)
@@ -821,7 +849,8 @@ class SubtitleService:
         output_path: str,
         config: DualSubtitleConfig,
         enable_sync: bool = True,
-        video_path: Optional[str] = None
+        video_path: Optional[str] = None,
+        **kwargs
     ) -> Dict:
         """Create a dual subtitle in ASS format with full customization and optional synchronization"""
         
@@ -843,7 +872,8 @@ class SubtitleService:
                 # Use hybrid sync: primary to video, secondary to primary
                 cached_sync_result = SubtitleService.sync_subtitles_hybrid(
                     video_path, primary_path, secondary_path, 
-                    temp_primary_sync_path, temp_secondary_sync_path
+                    temp_primary_sync_path, temp_secondary_sync_path,
+                    **kwargs
                 )
                 
                 if cached_sync_result['success']:
@@ -997,7 +1027,8 @@ class SubtitleService:
         output_path: str,
         config: DualSubtitleConfig,
         enable_sync: bool = True,
-        video_path: Optional[str] = None
+        video_path: Optional[str] = None,
+        **kwargs
     ) -> Dict:
         """Create a dual subtitle in SRT format with prefixes and optional synchronization"""
         
@@ -1019,7 +1050,8 @@ class SubtitleService:
                 # Use hybrid sync: primary to video, secondary to primary
                 cached_sync_result = SubtitleService.sync_subtitles_hybrid(
                     video_path, primary_path, secondary_path, 
-                    temp_primary_sync_path, temp_secondary_sync_path
+                    temp_primary_sync_path, temp_secondary_sync_path,
+                    **kwargs
                 )
                 
                 if cached_sync_result['success']:
@@ -1189,7 +1221,8 @@ class SubtitleService:
         declared_primary_lang: Optional[str] = None,
         declared_secondary_lang: Optional[str] = None,
         enable_language_detection: bool = True,
-        enable_sync: bool = True
+        enable_sync: bool = True,
+        **kwargs
     ) -> Dict:
         """Main method to create dual subtitle with given configuration and automatic language detection"""
         
@@ -1231,12 +1264,14 @@ class SubtitleService:
             if config.output_format == SubtitleFormat.SRT:
                 result = SubtitleService.create_dual_subtitle_srt(
                     primary_path, secondary_path, output_path, config, 
-                    enable_sync=enable_sync, video_path=video_path
+                    enable_sync=enable_sync, video_path=video_path,
+                    **kwargs
                 )
             else:
                 result = SubtitleService.create_dual_subtitle_ass(
                     primary_path, secondary_path, output_path, config, 
-                    enable_sync=enable_sync, video_path=video_path
+                    enable_sync=enable_sync, video_path=video_path,
+                    **kwargs
                 )
             
             # Add additional information to result
@@ -1468,7 +1503,8 @@ class SubtitleService:
                         declared_primary_lang=primary_language,
                         declared_secondary_lang=secondary_language,
                         enable_language_detection=True,
-                        enable_sync=True  # Enable sync with optimizations
+                        enable_sync=True,  # Enable sync with optimizations
+                        secondary_timing_offset=styling_config.get('secondary_timing_offset', -200)
                     )
                     
                     if result['success']:
