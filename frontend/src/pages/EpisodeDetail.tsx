@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, Play, Subtitles, Plus, Upload, Download, Trash2, Film, FileText, Languages, Sparkles, Check, X, Info, FileUp, HardDrive } from 'lucide-react';
+import { ArrowLeft, Plus, Upload, Download, Trash2, Film, FileText, Languages, Sparkles, Check, X, Info, FileUp, Subtitles } from 'lucide-react';
 import { apiClient } from '../lib/api';
 import { DualSubtitleCreator } from '../components/DualSubtitleCreator';
+import { EpisodeHeader } from '../components/EpisodeHeader';
+import { FileInfoBar } from '../components/FileInfoBar';
 import { useToast } from '../components/ui/Toaster';
 import { COMPREHENSIVE_LANGUAGES, getLanguageByCode, searchLanguages } from '../data/languages';
 import { extractLanguageFromFilename } from '../utils/languageDetection';
@@ -229,77 +231,16 @@ export const EpisodeDetail: React.FC = () => {
   return (
     <div className="min-h-screen">
       {/* ELEGANT HEADER */}
-      <section className="py-8 border-b border-sage-500/20">
-        <div className="px-4 md:px-6 lg:px-8 max-w-full mx-auto">
-          <div className="flex items-start gap-4">
-            <Link 
-              to={`/shows/${episode.show}`} 
-              className="flex items-center justify-center w-10 h-10 rounded-xl bg-charcoal-500 border border-gold-500/20 text-gold-500 hover:bg-gold-500 hover:text-black transition-all duration-200"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </Link>
-            
-            <div className="flex-1">
-              <div className="flex items-center gap-2 text-sm text-mist-500 mb-2">
-                <Link to="/shows" className="hover:text-cream-500 transition-colors">Shows</Link>
-                <span>/</span>
-                <Link to={`/shows/${episode.show}`} className="hover:text-cream-500 transition-colors">{episode.show}</Link>
-                <span>/</span>
-                <span className="text-cream-500">{episode.season_episode}</span>
-              </div>
-              
-              <h1 className="font-serif font-bold text-3xl md:text-4xl text-cream-500 mb-2">
-                {episode.title}
-              </h1>
-              
-              <div className="flex items-center gap-6 text-sm text-mist-500">
-                <div className="flex items-center gap-2">
-                  <Play className="w-4 h-4" />
-                  <span>{episode.season_episode}</span>
-                </div>
-                {episode.duration && (
-                  <div className="flex items-center gap-2">
-                    <span>{Math.round(episode.duration / 60000)} min</span>
-                  </div>
-                )}
-                <div className="flex items-center gap-2">
-                  <Subtitles className="w-4 h-4" />
-                  <span>
-                    {subtitles?.external_subtitles?.length || 0} external, {subtitles?.embedded_subtitles?.length || 0} embedded
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
+      <EpisodeHeader 
+        episode={episode}
+        subtitles={subtitles}
+      />
 
       {/* MAIN CONTENT */}
       <section className="py-8">
         <div className="px-4 md:px-6 lg:px-8 max-w-full mx-auto">
           {/* Compact File Info Bar */}
-          <div className="mb-6 bg-charcoal-500/50 rounded-lg border border-sage-500/20 px-4 py-3">
-            <div className="flex items-center gap-3">
-              <HardDrive className="w-4 h-4 text-mist-500" />
-              {subtitles?.file_path ? (
-                <div className="flex items-center gap-4 text-sm">
-                  <div className="flex items-center gap-2">
-                    <Check className="w-3 h-3 text-success-500" />
-                    <span className="text-cream-500">Video file found</span>
-                  </div>
-                  <span className="text-mist-500">•</span>
-                  <code className="text-xs text-mist-500 font-mono bg-charcoal-400/50 px-2 py-1 rounded">
-                    {subtitles.naming_pattern}.LANG.srt
-                  </code>
-                </div>
-              ) : (
-                <div className="flex items-center gap-2 text-sm">
-                  <X className="w-3 h-3 text-error-500" />
-                  <span className="text-mist-500">No video file found</span>
-                </div>
-              )}
-            </div>
-          </div>
+          <FileInfoBar subtitles={subtitles} />
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             

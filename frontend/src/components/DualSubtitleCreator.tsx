@@ -236,28 +236,38 @@ export const DualSubtitleCreator: React.FC<DualSubtitleCreatorProps> = ({
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-plex-gray-200 mb-2">
+                <label className="block text-sm font-medium text-cream-500 mb-2">
                   Color
                 </label>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-3">
                   <input
                     type="color"
                     value={config.primary_color}
                     onChange={(e) => setConfig({ ...config, primary_color: e.target.value })}
-                    className="w-12 h-10 rounded border border-plex-gray-600 bg-transparent cursor-pointer"
+                    className="flex-shrink-0 cursor-pointer"
+                    style={{ 
+                      width: '48px',
+                      height: '48px',
+                      border: '2px solid rgba(74, 93, 79, 0.6)',
+                      borderRadius: '8px',
+                      padding: '0',
+                      background: 'transparent',
+                      outline: 'none',
+                      minWidth: '48px'
+                    }}
                   />
                   <input
                     type="text"
                     value={config.primary_color}
                     onChange={(e) => setConfig({ ...config, primary_color: e.target.value })}
-                    className="input-field flex-1"
+                    className="input-field flex-1 min-w-0"
                     placeholder="#FFFFFF"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-plex-gray-200 mb-2">
+                <label className="block text-sm font-medium text-cream-500 mb-2">
                   Font Size: {config.primary_font_size}px
                 </label>
                 <input
@@ -266,7 +276,7 @@ export const DualSubtitleCreator: React.FC<DualSubtitleCreatorProps> = ({
                   max="48"
                   value={config.primary_font_size}
                   onChange={(e) => setConfig({ ...config, primary_font_size: parseInt(e.target.value) })}
-                  className="w-full h-2 bg-plex-gray-700 rounded-lg appearance-none cursor-pointer slider"
+                  className="w-full h-2 bg-slate-500 rounded-lg appearance-none cursor-pointer slider"
                 />
               </div>
             </div>
@@ -275,7 +285,7 @@ export const DualSubtitleCreator: React.FC<DualSubtitleCreatorProps> = ({
           {/* Secondary Subtitle Config */}
           <div className="space-y-4">
             <h4 className="text-lg font-semibold text-plex-gray-100 flex items-center gap-2">
-              <Maximize2 className="w-5 h-5 text-plex-orange" />
+              <Palette className="w-5 h-5 text-plex-orange" />
               Secondary Subtitle Style
             </h4>
             
@@ -295,28 +305,38 @@ export const DualSubtitleCreator: React.FC<DualSubtitleCreatorProps> = ({
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-plex-gray-200 mb-2">
+                <label className="block text-sm font-medium text-cream-500 mb-2">
                   Color
                 </label>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-3">
                   <input
                     type="color"
                     value={config.secondary_color}
                     onChange={(e) => setConfig({ ...config, secondary_color: e.target.value })}
-                    className="w-12 h-10 rounded border border-plex-gray-600 bg-transparent cursor-pointer"
+                    className="flex-shrink-0 cursor-pointer"
+                    style={{ 
+                      width: '48px',
+                      height: '48px',
+                      border: '2px solid rgba(74, 93, 79, 0.6)',
+                      borderRadius: '8px',
+                      padding: '0',
+                      background: 'transparent',
+                      outline: 'none',
+                      minWidth: '48px'
+                    }}
                   />
                   <input
                     type="text"
                     value={config.secondary_color}
                     onChange={(e) => setConfig({ ...config, secondary_color: e.target.value })}
-                    className="input-field flex-1"
+                    className="input-field flex-1 min-w-0"
                     placeholder="#FFFF00"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-plex-gray-200 mb-2">
+                <label className="block text-sm font-medium text-cream-500 mb-2">
                   Font Size: {config.secondary_font_size}px
                 </label>
                 <input
@@ -325,7 +345,7 @@ export const DualSubtitleCreator: React.FC<DualSubtitleCreatorProps> = ({
                   max="48"
                   value={config.secondary_font_size}
                   onChange={(e) => setConfig({ ...config, secondary_font_size: parseInt(e.target.value) })}
-                  className="w-full h-2 bg-plex-gray-700 rounded-lg appearance-none cursor-pointer slider"
+                  className="w-full h-2 bg-slate-500 rounded-lg appearance-none cursor-pointer slider"
                 />
               </div>
             </div>
